@@ -358,6 +358,10 @@ void rayverse_do_debug_cheats(void) {
             RESET_TOUCHE(SC_L);
             debug_show_obj_links = !debug_show_obj_links;
         }
+        // DEBUG: enable quick exit from level to world map
+        if (TOUCHE(SC_CONTROL) && TOUCHE(SC_Q)) {
+            GoMenu = 255;
+        }
     }
 
 

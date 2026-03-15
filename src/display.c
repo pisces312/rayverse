@@ -912,7 +912,7 @@ void Keyflush(void) {
 //    while (is_input_char_available()) {
 //        getch_();
 //    }
-    print_once("Not implemented: Keyflush"); //stub
+    print_once_dos("Not implemented: Keyflush"); //stub
 }
 
 //36C54

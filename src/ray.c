@@ -2100,7 +2100,8 @@ void RAY_HURT(void) {
         }
     }
 
-    if (ray.hit_points == -1) {
+    // NOTE: we're interpreting hit_points as unsigned so have to rely on underflow here
+    if (ray.hit_points == (u8)-1) {
         if (ray_mode == MODE_2_RAY_ON_MS) {
             ray_mode = MODE_4_MORT_DE_RAYMAN_ON_MS;
         } else {

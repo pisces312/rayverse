@@ -1494,27 +1494,27 @@ extern obj_procs_t ObjectsFonctions[262] INIT(= {
         {DO_MOVING_PLATFORM_COMMAND,       DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 49: moving flat stone
         {doMoskitoCommand,                 doMoskitoHit,                     DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 50: moskito (Bzzit)
         {DO_ONE_CMD,                       DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 51: moskito fruit small
-        {DO_ONE_CMD,                       DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 52: moskito fruit medium
-        {DO_ONE_CMD,                       DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoMstShakyFruitRaymanZDD,  ObjectUTurnDefault}, // 53: shaky fruit
-        {DO_ONE_CMD,                       DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 54: medaillon
-        {DO_MUSICIEN,                      DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoMusicienRaymanInZDD,     ObjectUTurnDefault}, // 55: musician
-        {DO_NOMOVE_STONEWOMAN_COMMAND,     DO_PNG_COLL_STONEWOMAN,           DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 56: nonmoving stoneman
-        {DO_ONE_CMD,                       DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoStalagRaymanZDD,         ObjectUTurnDefault}, // 57: stake
-        {DO_CAGE,                          DoCagePoingCollision,             DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 58: cage
-        {DO_CAGE2,                         DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 59: opened cage
-        {DO_ONE_CMD,                       DoWatAndBigClownPoingCollision,   DoRaymanCollisionDefault,        DoWatAndBigClownRaymanZDD, ObjectUTurnDefault}, // 60: big clown
-        {DO_ONE_CMD,                       DoWatAndBigClownPoingCollision,   DoRaymanCollisionDefault,        DoWatAndBigClownRaymanZDD, ObjectUTurnDefault}, // 61: big water clown
-        {DO_PROP_COMMAND,                  DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 62: water balloon
-        {DO_MOVING_PLATFORM_COMMAND,       DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 63: platform starts moving
-        {DO_ONE_CMD,                       DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 64: autoscroll
-        {DO_SPIDER_TIR,                    DoSpiderPoingCollision,           DoRaymanCollisionDefault,        DoSpiderRaymanZDD,         ObjectUTurnDefault}, // 65: spider
-        {DO_ONE_CMD,                       DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 66: spider dart
-        {DO_ONE_CMD,                       DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 67: swinging flower
-        {DO_ONE_CMD,                       DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 68: big boing plat
-        {DO_STONEBOMB_COMMAND,             DO_STONE_EXPLOSION,               DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 69: big bouncing boulder
-        {DO_TRP_COMMAND,                   DoTrumpetPoingCollision,          DoRaymanCollisionDefault,        DoTrompetteRaymanZDD,      ObjectUTurnDefault}, // 70: trumpet
-        {DO_NOTE_CMD,                      DO_NOTE_TOUCHEE,                  DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 71: note
-        {DO_ONE_NGW_COMMAND,               DO_NGW_POING_COLLISION,           DoRaymanCollisionDefault,        NGW_REACT_TO_RAY_IN_ZONE,  ObjectUTurnDefault}, // 72: pirate with earring
+        {DO_ONE_CMD,                   DoPoingCollisionDefault,        DoRaymanCollisionDefault, DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 52: moskito fruit medium
+        {DO_ONE_CMD,                   DoPoingCollisionDefault,        DoRaymanCollisionDefault, DoMstShakyFruitRaymanZDD,  ObjectUTurnDefault}, // 53: shaky fruit
+        {DO_ONE_CMD,                   DoPoingCollisionDefault,        DoRaymanCollisionDefault, DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 54: medaillon
+        {DO_MUSICIEN,                  DoPoingCollisionDefault,        DoRaymanCollisionDefault, DoMusicienRaymanInZDD,     ObjectUTurnDefault}, // 55: musician
+        {DO_NOMOVE_STONEWOMAN_COMMAND, DO_PNG_COLL_STONEWOMAN,         DoRaymanCollisionDefault, DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 56: nonmoving stoneman
+        {DO_ONE_CMD,                   DoPoingCollisionDefault,        DoRaymanCollisionDefault, DoStalagRaymanZDD,         ObjectUTurnDefault}, // 57: stake
+        {DO_CAGE,                      DoCagePoingCollision,           DoRaymanCollisionDefault, DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 58: cage
+        {DO_CAGE2,                     DoPoingCollisionDefault,        DoRaymanCollisionDefault, DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 59: opened cage
+        {DO_ONE_CMD,                   DoWatAndBigClownPoingCollision, DoRaymanCollisionDefault, DoWatAndBigClownRaymanZDD, ObjectUTurnDefault}, // 60: big clown
+        {DO_ONE_CMD,                   DoWatAndBigClownPoingCollision, DoRaymanCollisionDefault, DoWatAndBigClownRaymanZDD, ObjectUTurnDefault}, // 61: big water clown
+        {DO_DROP_COMMAND,              DoPoingCollisionDefault,        DoRaymanCollisionDefault, DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 62: water balloon
+        {DO_MOVING_PLATFORM_COMMAND,   DoPoingCollisionDefault,        DoRaymanCollisionDefault, DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 63: platform starts moving
+        {DO_ONE_CMD,                   DoPoingCollisionDefault,        DoRaymanCollisionDefault, DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 64: autoscroll
+        {DO_SPIDER_TIR,                DoSpiderPoingCollision,         DoRaymanCollisionDefault, DoSpiderRaymanZDD,         ObjectUTurnDefault}, // 65: spider
+        {DO_ONE_CMD,                   DoPoingCollisionDefault,        DoRaymanCollisionDefault, DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 66: spider dart
+        {DO_ONE_CMD,                   DoPoingCollisionDefault,        DoRaymanCollisionDefault, DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 67: swinging flower
+        {DO_ONE_CMD,                   DoPoingCollisionDefault,        DoRaymanCollisionDefault, DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 68: big boing plat
+        {DO_STONEBOMB_COMMAND,         DO_STONE_EXPLOSION,             DoRaymanCollisionDefault, DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 69: big bouncing boulder
+        {DO_TRP_COMMAND,               DoTrumpetPoingCollision,        DoRaymanCollisionDefault, DoTrompetteRaymanZDD,      ObjectUTurnDefault}, // 70: trumpet
+        {DO_NOTE_CMD,                  DO_NOTE_TOUCHEE,                DoRaymanCollisionDefault, DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 71: note
+        {DO_ONE_NGW_COMMAND,           DO_NGW_POING_COLLISION,         DoRaymanCollisionDefault, NGW_REACT_TO_RAY_IN_ZONE,  ObjectUTurnDefault}, // 72: pirate with earring
         {DO_ONE_NGW_RING_COMMAND,          DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 73: earring
         {DO_SAXO_COMMAND,                  DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 74: Mr Sax
         {DO_ONE_CMD,                       DoPoingCollisionDefault,          DoRaymanCollisionDefault,        DoRaymanInZDDDefault,      ObjectUTurnDefault}, // 75: bounce glitter
@@ -1976,6 +1976,16 @@ extern u8 casse_brique_active INIT(= 0); //962B8
 extern u8 CasseBriqueON INIT(= 0); //962B9
 extern s16 Toon_Speeds_x[7] INIT(= {-3, -2, -1, 0, 1, 1, 3}); //962BC
 extern s16 Toon_Speeds_y[7] INIT(= {-3, -5, -4, -6, -5, -3, -3}); //962CA
+
+extern s16 oscille[29] INIT(= {0, 4, 7, 9, 10, 9, 7, 4, 0, -2, -4, -5, -6, -5, -4, -2, 0, 1, 2, 3, 2, 1, 0, -1, -2, -1, 0, 1, 0}); //9632C
+
+//96369
+extern u8 vitrail_clignotement[4][5] INIT(= {
+        {0, 0, 2, 0, 2},
+        {2, 0, 0, 2, 0},
+        {2, 2, 0, 0, 0},
+        {0, 0, 0, 0, 0}
+});
 
 extern u8 dark_attaque INIT(= 0); //9637D
 extern u8 type_dark_attaque INIT(= 0); //9637E
@@ -3562,6 +3572,7 @@ extern s32 dword_E0D14; //E0D14
 extern obj_t wldobj[100]; //E0D18
 extern u8 sp_y; //E40A9
 
+extern rgb_palette_t rvb_E40AC; //E40AC
 extern rgb_palette_t menu_rvb; //E43AC (?)
 extern rgb_palette_t rvb_options_in_game; //E46AC (?)
 extern rgb_palette_t rvb_menu_save; //E49AC (?)

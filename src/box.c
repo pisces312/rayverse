@@ -208,6 +208,17 @@ void InitMenuPalette(void) {
         MenuPalette.colors[i].g = c;
         MenuPalette.colors[i].b = c;
     }
+    // blue overlay over grayscale
+    for (s32 i = 192, j = 0; i < 256; ++i, ++j) {
+        u8 c = j;
+        if (c <= 3) {
+            c = 3;
+        }
+        c <<= 2;
+        MenuPalette.colors[i].r = 0;
+        MenuPalette.colors[i].g = 0;
+        MenuPalette.colors[i].b = c;
+    }
     if (dans_la_map_monde) {
         MenuPalette.colors[32].r = 16 << 2;
         MenuPalette.colors[32].g = 14 << 2;
@@ -251,6 +262,7 @@ void CadreTrans(s16 x, s16 y, s16 w, s16 h) {
             } else {
                 *pos = 0xC8;
             }
+            ++pos;
         }
         line += SCREEN_WIDTH;
     }

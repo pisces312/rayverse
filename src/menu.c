@@ -322,13 +322,108 @@ void DO_NEW_MENUS(void) {
 
 //49B7C
 void DO_OPTIONS_IN_GAME(void) {
-    if (GoMenu == 1) {
-        //NOTE: temporary method for quitting out of a level (will return to the main menu)
+
+    if (is_debug_mode && GoMenu == 255) {
+        //NOTE: debug cheat for quickly quitting out of a level (will return to the world map)
         new_world = 1;
         new_level = 1;
         GoMenu = 0;
+        return;
     }
-    print_once("Not implemented: DO_OPTIONS_IN_GAME"); //stub
+
+    u8 button_released_saved = button_released;
+    u16 SizeScreen_saved;
+
+    SetCompteurTrameAudio();
+    menuEtape = 4;
+    byte_E4CFD = 1;
+    MENU_SUITE = 0;
+    MENU_RETURN = 0;
+    if (GoMenu == 1) {
+        if (byte_96884 == 64) {
+            set_xywhmap(TabW1[0], TabW2[0], TabH1[0], TabH2[0]);
+            sprite_clipping(Bloc_lim_W1, Bloc_lim_W2, Bloc_lim_H1, Bloc_lim_H2);
+            ++GoMenu;
+        } else {
+            GoMenu = 0;
+        }
+    } else if (GoMenu == 2 || GameModeVideo == MODE_X) {
+        if ((num_world == 6 && num_level == 4) || is_fee) {
+            SizeScreen_saved = SizeScreen;
+            SizeScreen = 0;
+        }
+        rvb_options_in_game = rvb[0];
+        default_key();
+        GoMenu = 0;
+        OptionGame = 1;
+        if (CarteSonAutorisee) {
+            start_freeze_snd();
+        }
+        while (menuEtape != 0) {
+            raj_env_sound(options_jeu.sound_volume);
+            raj_env_stereo(options_jeu.is_stereo);
+            raj_env_audio(options_jeu.music_enabled);
+            RESET_ALL_TOUCHE();
+            switch(menuEtape) {
+                case 4: {
+                    pINIT_SCREEN = INIT_OPTIONS_CHOICE;
+                    pLOAD_SCREEN = NULL;
+                    if (MENU_RETURN) {
+                        menuEtape = 4;
+                    }
+                    DO_MENU();
+                } break;
+                case 7: {
+                    pINIT_SCREEN = INIT_KEY_SCREEN;
+                    pLOAD_SCREEN = NULL;
+                    if (MENU_RETURN) {
+                        menuEtape = 4;
+                    }
+                    DO_MENU();
+                } break;
+                case 8: {
+                    pINIT_SCREEN = INIT_PAD_SCREEN;
+                    pLOAD_SCREEN = NULL;
+                    if (MENU_RETURN) {
+                        menuEtape = 4;
+                    }
+                    DO_MENU();
+                } break;
+                case 9: {
+                    pINIT_SCREEN = INIT_GRAPHIC_SCREEN;
+                    pLOAD_SCREEN = NULL;
+                    if (MENU_RETURN) {
+                        menuEtape = 4;
+                    }
+                    DO_MENU();
+                } break;
+                default: break;
+            }
+            OptionGame = 0;
+            new_key();
+            if (GameModeVideo == MODE_NORMAL) {
+                set_xywhmap(TabW1[SizeScreen], TabW2[SizeScreen], TabH1[SizeScreen], TabH2[SizeScreen]);
+                sprite_clipping(Bloc_lim_W1, Bloc_lim_W2, Bloc_lim_H1, Bloc_lim_H2);
+                N_CLRSCR(DrawBufferNormal);
+            } else {
+                if (P486 == 1) {
+                    //sub_1268A(plan0bit_length >> 2);
+                }
+            }
+            if (CarteSonAutorisee) {
+                stop_freeze_snd();
+            }
+            in_pause = 0;
+            ProchainEclair = 1;
+            numero_palette_special = 0;
+            MapTimePause = 0;
+            if ((num_world == 6 && num_level == 4) || is_fee) {
+                SizeScreen = SizeScreen_saved;
+            }
+        }
+        byte_96884 = dead_time;
+        button_released = button_released_saved;
+    }
 }
 
 //49E98
@@ -1319,28 +1414,275 @@ u8 confirmation_msg(u8 which_message) {
 }
 
 //4FEF0
-void SYNCHRO_LOOP_PALETTE(void* func) {
-    print_once("Not implemented: SYNCHRO_LOOP_PALETTE"); //stub
+void SYNCHRO_LOOP_PALETTE(synchro_loop_palette_func_t func) {
+    s16 ended = 0;
+    do {
+        endsynchro();
+        synchro();
+        SetPalette(&rvb_E40AC, 0, 256);
+        u32 timer = 0;
+        ended = func();
+    } while(!ended);
 }
 
+// NOTE: ChatGPT (GPT-5.2) was used to help reconstruct the functions below (apparition_prg up until FonduOption)
 //4FF3C
-void apparition_prg(void) {
-    print_once("Not implemented: apparition_prg"); //stub
+s16 apparition_prg(u32 a1) {
+    (void)a1;
+
+    s32 w = wFondu;
+    s32 h = hFondu;
+    s32 src_row_skip = SCREEN_WIDTH - w;
+
+    DoCdRap();
+    DISPLAY_FOND_MENU();
+
+    u8* src = EffetBufferNormal + (SCREEN_WIDTH * SCREEN_HEIGHT) + yFondu * SCREEN_WIDTH + xFondu;
+
+    s32 yoff = -((h-1)/2);
+    const s32 yoff_end = h/2;
+
+    while (yoff < yoff_end) {
+        s32 dst_y = (SCREEN_HEIGHT/2) + EtapeFondu * yoff;
+
+        if (dst_y > Bloc_lim_H1 && dst_y < Bloc_lim_H2) {
+            u8* dst_row = (u8*)DrawBufferNormal + dst_y * SCREEN_WIDTH;
+
+            s32 xoff = -((w-1)/2);
+            s32 xoff_end = w/2;
+            u8* s = src;
+            while (xoff < xoff_end) {
+                s32 dst_x = (SCREEN_WIDTH/2) + EtapeFondu * xoff;
+
+                if (dst_x > Bloc_lim_W1 && dst_x < Bloc_lim_W2) {
+                    dst_row[dst_x] = *s;
+                }
+                ++xoff;
+                ++s;
+            }
+
+            src += w + src_row_skip; // advance exactly one source scanline
+        } else {
+            src += SCREEN_WIDTH; // skip full source scanline
+        }
+
+        ++yoff;
+    }
+
+    // Update EtapeFondu / decide end
+    if (InOut != 0) {
+        // decreasing until 1
+        --EtapeFondu;
+        return (EtapeFondu == 1) ? 1 : 0;
+    } else {
+        // increasing until 32; at 16 trigger INIT_FADE_OUT
+        if (EtapeFondu == 16) {
+            INIT_FADE_OUT();
+        }
+        ++EtapeFondu;
+        return (EtapeFondu == 32) ? 1 : 0;
+    }
 }
 
 //500FC
-void fondu_prg(void) {
-    print_once("Not implemented: fondu_prg"); //stub
+s16 fondu_prg(u32 a1) {
+    (void)a1;
+
+    s32 x = xFondu;
+    s32 y = yFondu;
+    s32 w = wFondu;
+    s32 h = hFondu;
+
+    s32 row_skip = SCREEN_WIDTH - w;
+
+    u8* dst = DrawBufferNormal + y * SCREEN_WIDTH + x;
+    u8* src = EffetBufferNormal + (SCREEN_WIDTH * SCREEN_HEIGHT) + y * SCREEN_WIDTH + x;
+
+    s32 E = (s16)EtapeFondu;
+    s32 mul = 16 - E;
+    s32 div = 17 - E;
+
+    for (s32 j = 0; j < h; ++j) {
+        for (s32 i = 0; i < w; ++i) {
+            u8 a = dst[i];
+            u8 b = src[i];
+            if (a != b) {
+                dst[i] = (u8)((a * mul + b) / div);
+            }
+        }
+        dst += w + row_skip;
+        src += w + row_skip;
+    }
+
+    EtapeFondu = (s16)(E + 1);
+    return (EtapeFondu == 16) ? 1 : 0;
 }
 
 //501E8
-void change_couleur_prg(void) {
-    print_once("Not implemented: change_couleur_prg"); //stub
+s16 change_couleur_prg(void) {
+    s16 done = 1;
+    for (s32 i = 0; i < 256; ++i) {
+        rgb_t* rgb_cur = rvb_E40AC.colors + i;
+        rgb_t* rgb_goal = rvb_menu_save.colors + i;
+        for (s32 c = 0; c < 3; ++c) {
+            u8* cur = ((u8*)rgb_cur) + c;
+            u8 goal = ((u8*)rgb_goal)[c];
+            if (*cur == goal) {
+                continue;
+            }
+            done = 0;
+            if (*cur > goal + 2) {
+                *cur -= 2;
+            } else if (*cur + 2 < goal) {
+                *cur += 2;
+            } else {
+                *cur = goal;
+            }
+        }
+    }
+    return done;
 }
 
 //502FC
-void FonduOption(s16 x, s16 y, s16 w, s16 h, u8 a5) {
-    print_once("Not implemented: FonduOption"); //stub
+void FonduOption(s16 x, s16 y, s16 w, s16 h, u8 mode) {
+    switch(mode) {
+        case 1:
+            EtapeFondu = 0;
+            break;
+        case 2:
+            EtapeFondu = 1;
+            InOut = 0;
+            break;
+        case 0:
+            EtapeFondu = 32;
+            InOut = 1;
+            break;
+    }
+    xFondu = (x & ~3) + 4;
+    yFondu = y;
+    wFondu = (w & ~3) + 6;
+    hFondu = h + 2;
+
+    if (mode == 0) {
+        if (GameModeVideo == MODE_NORMAL) {
+            CaptureVideo(draw_buffer, EffetBufferNormal, 1);
+            if (RayEvts.firefly) {
+                set_xywhmap(TabW1[0], TabW2[0], TabH1[0], TabH2[0]);
+                sprite_clipping(Bloc_lim_W1, Bloc_lim_W2, Bloc_lim_H1, Bloc_lim_H2);
+            }
+            DO_FADE_OUT();
+            set_xywhmap(TabW1[SizeScreen], TabW2[SizeScreen], TabH1[SizeScreen], TabH2[SizeScreen]);
+            sprite_clipping(Bloc_lim_W1, Bloc_lim_W2, Bloc_lim_H1, Bloc_lim_H2);
+            N_CLRSCR(DrawBufferNormal);
+        } else {
+            CaptureVideo(display_buffer, EffetBufferNormal, 1);
+            DO_FADE_OUT();
+            InitModeNormalWithFrequency(VGA_FREQ);
+            NewFrequency(Frequence);
+        }
+
+        if (
+            (num_world == 1 && num_level == 9) ||
+            (num_world == 2 && num_level == 4) ||
+            (num_world == 4 && num_level == 9) ||
+            (num_world == 5 && num_level == 4)
+        ) {
+            rvb[current_pal_id] = rvb_special[15];
+        }
+
+        InitMenuPalette();
+        draw_buffer = DrawBufferNormal;
+        DISPLAY_FOND_MENU();
+    } else if (mode == 1) {
+        for (s32 i = 0; i < 256; ++i) {
+            rgb_t rgb = MenuPalette.colors[i];
+            u8 gray = ((rgb.r + rgb.g + rgb.b) >> 2) / 3 + 128;
+            rvb_menu_save.colors[i] = MenuPalette.colors[gray];
+        }
+        rvb_E40AC = MenuPalette;
+        SYNCHRO_LOOP_PALETTE(change_couleur_prg);
+
+        // pixel remap to menu gray index
+        u8* row = DrawBufferNormal + SCREEN_WIDTH * yFondu + xFondu;
+        for (s32 j = 0; j < hFondu; ++j) {
+            u8* pos = row;
+            for (s32 i = 0; i < wFondu; ++i) {
+                u8 src = *pos;
+                rgb_t rgb = MenuPalette.colors[src];
+                u8 gray = ((rgb.r + rgb.g + rgb.b) >> 2) / 3 + 128;
+                *pos++ = gray;
+            }
+            row += SCREEN_WIDTH;
+        }
+
+    }
+
+    // Draw menu to offscreen area
+    draw_buffer = EffetBufferNormal + SCREEN_WIDTH * SCREEN_HEIGHT;
+    pAFFICHE_SCREEN();
+    draw_buffer = DrawBufferNormal;
+
+    if (mode == 1) {
+        // pixel remap to menu gray index
+        u8* row = (EffetBufferNormal + SCREEN_WIDTH * SCREEN_HEIGHT) + SCREEN_WIDTH * yFondu + xFondu;
+        for (s32 j = 0; j < hFondu; ++j) {
+            u8* pos = row;
+            for (s32 i = 0; i < wFondu; ++i) {
+                u8 src = *pos;
+                rgb_t rgb = MenuPalette.colors[src];
+                u8 gray = ((rgb.r + rgb.g + rgb.b) >> 2) / 3 + 128;
+                *pos++ = gray;
+            }
+            row += SCREEN_WIDTH;
+        }
+    }
+
+    if (mode == 0) {
+        rvb_menu_save = rvb[current_pal_id];
+        rvb[current_pal_id] = MenuPalette;
+        INIT_FADE_IN();
+        SYNCHRO_LOOP(apparition_prg);
+        rvb[current_pal_id] = rvb_menu_save;
+    } else if (mode == 1) {
+        SYNCHRO_LOOP(fondu_prg);
+        for (s32 i = 0; i < 256; ++i) {
+            rgb_t rgb = MenuPalette.colors[i];
+            u8 gray = ((rgb.r + rgb.g + rgb.b) >> 2) / 3 + 128;
+            rvb_E40AC.colors[i] = MenuPalette.colors[gray];
+        }
+        rvb_menu_save = MenuPalette;
+        pAFFICHE_SCREEN();
+        SYNCHRO_LOOP_PALETTE(change_couleur_prg);
+
+    } else if (mode == 2) {
+        // NOTE: disabled this, because the palette seems to get messed up in DO_MENU(). I don't know why that does not
+        // happen in the original game? Anyway, it still seems to work fine with the line disabled.
+//        rvb_menu_save = rvb[current_pal_id];
+
+        rvb[current_pal_id] = MenuPalette;
+        SYNCHRO_LOOP(apparition_prg);
+        if (GameModeVideo == MODE_X) {
+            InitModeXWithFrequency(VGA_FREQ);
+            NewFrequency(Frequence);
+        }
+
+        if (
+            (num_world == 1 && num_level == 9) ||
+            (num_world == 2 && num_level == 4) ||
+            (num_world == 4 && num_level == 9) ||
+            (num_world == 5 && num_level == 4)
+        ) {
+            rvb[current_pal_id] = rvb_special[numero_palette_special];
+        } else {
+            rvb[current_pal_id] = rvb_menu_save;
+        }
+
+        if (current_pal_id != 0) {
+            rvb[0] = rvb_options_in_game;
+        }
+        INIT_FADE_IN();
+
+    }
 }
 
 //50A38
@@ -1358,5 +1700,5 @@ void FonduPixel(s16 x, s16 y, s16 w, s16 h) {
     draw_buffer = EffetBufferNormal + 64000;
     pAFFICHE_SCREEN();
     draw_buffer = DrawBufferNormal;
-    SYNCHRO_LOOP(FonduPixel_prg);
+    SYNCHRO_LOOP(FonduPixel_prg); //TODO: implement FonduPixel_prg
 }
