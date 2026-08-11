@@ -69,12 +69,18 @@ typedef struct snd_t {
     s32 offset;
     s32 size;
     s32 sample_count;
-    s32 bnk_field_C;
+    s32 loop_length;
+    s32 loop_start;
+    s32 loop_end;
     float position;
     float volume;
+    u8 pan;
     s32 sample_rate;
     u8 bytes_per_sample;
     u8 is_playing;
+    u8 is_looping;
+    u8 is_signed;
+    u8 is_stereo;
 } snd_t;
 
 typedef struct pile_snd_t {
@@ -605,8 +611,8 @@ typedef struct vitraux_info_t {
 typedef struct bnk_header_t {
     s32 offset;
     s32 size;
-    s32 field_8;
-    s32 field_C;
+    s32 loop_start;
+    s32 loop_length;
 } bnk_header_t;
 
 typedef struct bande_t {

@@ -170,20 +170,29 @@ s16 KeyOn(u8 bank, u8 prog, u8 tone, u8 note, u8 volume, u8 pan) {
         snd.size = bnk_header->size;
         snd.bytes_per_sample = 1;
         snd.sample_count = snd.size;
-        snd.bnk_field_C = bnk_header->field_C;
+        snd.loop_length = bnk_header->loop_length;
+        snd.loop_start = bnk_header->loop_start;
+        snd.loop_end = bnk_header->loop_start + bnk_header->loop_length;
+        snd.is_looping = bnk_header->loop_length > 0 && snd.loop_start >= 0 && snd.loop_start < snd.loop_end && snd.loop_end <= snd.sample_count;
         snd.sample_rate = sample_rate;
-        snd.position = 0.0;
-        snd.volume = MIN(1.0f, (float)volume / 50.0f);
+        snd.position = 0.0f;
+        snd.volume = MIN(1.0f, (float)volume / 127.0f);
+        snd.pan = pan;
     } else {
         bnk_header_t* bnk_header = bnkHeaderFixe + prog;
         snd.data = bnkDataFixe + bnk_header->offset;
         snd.offset = bnk_header->offset;
         snd.size = bnk_header->size;
         snd.sample_count = snd.size;
+        snd.loop_length = bnk_header->loop_length;
+        snd.loop_start = bnk_header->loop_start;
+        snd.loop_end = bnk_header->loop_start + bnk_header->loop_length;
+        snd.is_looping = bnk_header->loop_length > 0 && snd.loop_start >= 0 && snd.loop_start < snd.loop_end && snd.loop_end <= snd.sample_count;
         snd.sample_rate = sample_rate;
         snd.bytes_per_sample = 1;
-        snd.position = 0.0;
-        snd.volume = MIN(1.0f, (float)volume / 50.0f);
+        snd.position = 0.0f;
+        snd.volume = MIN(1.0f, (float)volume / 127.0f);
+        snd.pan = pan;
     }
     s16 voice_index = play_digi_snd(&snd);
     return voice_index;
@@ -191,14 +200,21 @@ s16 KeyOn(u8 bank, u8 prog, u8 tone, u8 note, u8 volume, u8 pan) {
 
 //3EC0C
 void KeyOff(u32 voice_id, u8 bank, u8 prog, u8 tone, u8 note) {
+    if (voice_id >= COUNT(digi_voices)) {
+        return;
+    }
     snd_t* digi_voice = digi_voices + voice_id;
     digi_voice->is_playing = false;
 }
 
 //3EC1C
 void KeyVol(s32 voice_id, s32 volume, s32 pan) {
+    if (voice_id < 0 || voice_id >= COUNT(digi_voices)) {
+        return;
+    }
     snd_t* digi_voice = digi_voices + voice_id;
-    digi_voice->volume = MIN(1.0f, (float)volume / 50.0f);
+    digi_voice->volume = MIN(1.0f, (float)volume / 127.0f);
+    digi_voice->pan = (u8)MIN(127, MAX(0, pan));
 }
 
 //3EC78
@@ -231,12 +247,86 @@ void LoadTchatchPerdu(void) {
 
 //3EDF4
 void PlayTchatch(s32 snd, s32 volume) {
-    print_once("Not implemented: PlayTchatch"); //stub
+    static const u8 sndvig_index_by_tchatch[9] = {8, 5, 2, 0, 4, 7, 1, 6, 3};
+
+    s32 sndvig_index = 6;
+    if (snd >= 1 && snd <= 9) {
+        sndvig_index = sndvig_index_by_tchatch[snd - 1];
+    }
+
+    u8* data = NULL;
+    s32 size = 0;
+    if (sndvig_index == 6 && TchachPerduPtr != NULL) {
+        data = TchachPerduPtr;
+        size = TchachPerduSize;
+    } else {
+        stop_cd();
+        FILE* fp = open_data_file("SNDVIG.DAT", true);
+        if (!fp) {
+            rayman_sound_fatal_error("Fichier Tchach introuvable.\n");
+        }
+
+        archive_header_t* sndvig_header = sndvig_infos + sndvig_index;
+        if (ptrTchatch != NULL) {
+            for (s32 i = 0; i < COUNT(digi_voices); ++i) {
+                if (digi_voices[i].data == ptrTchatch) {
+                    digi_voices[i].is_playing = false;
+                }
+            }
+            free(ptrTchatch);
+            ptrTchatch = NULL;
+        }
+
+        ptrTchatch = (u8*)malloc(sndvig_header->size);
+        if (!ptrTchatch) {
+            fclose(fp);
+            return;
+        }
+
+        fseek(fp, sndvig_header->offset, SEEK_SET);
+        fread(ptrTchatch, 1, sndvig_header->size, fp);
+        fclose(fp);
+
+        u8 checksum = decode_xor(ptrTchatch, sndvig_header->size, sndvig_header->xor_byte, sndvig_header->checksum_byte);
+        if (checksum != 0) {
+            rayman_sound_fatal_error("Load error in sndvig.dat.\n");
+        }
+
+#if 0
+        // NOTE: these sounds are 16-bit signed little-endian PCM, mono, 11025 Hz.
+        FILE* dump = fopen("tchatch.bin", "wb");
+        fwrite(ptrTchatch, 1, sndvig_header->size, dump);
+        fclose(dump);
+#endif
+
+        data = ptrTchatch;
+        size = sndvig_header->size;
+    }
+
+    snd_t tchatch = {0};
+    tchatch.data = data;
+    tchatch.size = size;
+    tchatch.sample_rate = 11025;
+    tchatch.bytes_per_sample = 2;
+    tchatch.sample_count = size / tchatch.bytes_per_sample;
+    tchatch.volume = MIN(1.0f, (float)volume / 127.0f);
+    tchatch.pan = 64;
+    tchatch.is_signed = true;
+    tchatch.is_stereo = false;
+    play_digi_snd(&tchatch);
 }
 
 //3EFA4
 void FreeTchatchVignette(void) {
-    print_once("Not implemented: FreeTchatchVignette"); //stub
+    if (ptrTchatch != NULL) {
+        for (s32 i = 0; i < COUNT(digi_voices); ++i) {
+            if (digi_voices[i].data == ptrTchatch) {
+                digi_voices[i].is_playing = false;
+            }
+        }
+        free(ptrTchatch);
+        ptrTchatch = NULL;
+    }
 }
 
 //3EFD4

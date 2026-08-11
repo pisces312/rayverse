@@ -3500,7 +3500,9 @@ extern u8* TchachPerduPtr; //E0B00
 extern s32 TchachPerduSize; //E0B04
 extern char current_device_name[100]; //E0B0A
 extern s32 current_device_id; //E0B6E
-
+extern s32 digi_driver_handle; //E0B78
+extern s32 dword_E0B7C; //E0B7C
+extern s32 tchatch_voice_id; //E0B80
 extern obj_t* dark_obj; //E0B84
 extern char txt_dark2[100]; //E0B88
 extern u32 dword_E0BEC; //E0BEC
