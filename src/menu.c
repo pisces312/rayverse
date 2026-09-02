@@ -225,8 +225,15 @@ void InitClipping(void) {
 
 //4980C
 bool IsBackgroundOn(void) {
-    print_once("Not implemented: IsBackgroundOn");
-    return true; //stub
+    if ((num_world == world_1_jungle && num_level == 16) ||
+        (num_world == world_2_music && num_level == 16) ||
+        (num_world == world_3_mountain && num_level == 10) ||
+        (num_world == world_4_image && (num_level == 4 || num_level == 11)) ||
+        (num_world == world_5_cave && (num_level == 3 || num_level == 11)) ||
+        (num_world == world_6_cake && num_level == 4)) {
+        return true;
+    }
+    return BackgroundOptionOn != 0;
 }
 
 //498A4
@@ -316,7 +323,7 @@ void DO_NEW_MENUS(void) {
         }
     }
     new_key();
-    //SaveOptionsOnDisk();
+    SaveOptionsOnDisk();
 
 }
 

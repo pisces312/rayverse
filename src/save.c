@@ -691,8 +691,79 @@ bool LoadInfoGame(u8 which_save) {
 
 //74CC8
 bool SaveOptionsOnDisk(void) {
-    print_once("Not implemented: SaveOptionsOnDisk");
-    return 0; //stub
+    const size_t config_size = 0x84;
+    mem_t* mem = (mem_t*)calloc(1, sizeof(mem_t) + config_size);
+    if (mem == NULL) {
+        return false;
+    }
+    mem->capacity = config_size;
+
+    s32 port = GetPort();
+    s32 irq = GetIrq();
+    s32 dma = GetDma();
+    s32 param = GetParam();
+    s32 device_id = GetDeviceID_Ray();
+    u8 saved_frequency = Frequence;
+    if (saved_frequency > 2) {
+        saved_frequency = 0;
+    }
+
+    mem_write(&language, mem, 1);
+    mem_write(&port, mem, 4);
+    mem_write(&irq, mem, 4);
+    mem_write(&dma, mem, 4);
+    mem_write(&param, mem, 4);
+    mem_write(&device_id, mem, 4);
+    mem_write(&NumCard, mem, 1);
+    mem_write(&options_jeu.jump, mem, 2);
+    mem_write(&options_jeu.fist, mem, 2);
+    mem_write(&options_jeu.field_14, mem, 2);
+    mem_write(&options_jeu.action, mem, 2);
+    mem_write(&options_jeu.music_enabled, mem, 2);
+    mem_write(&options_jeu.sound_volume, mem, 2);
+    mem_write(&options_jeu.is_stereo, mem, 2);
+    mem_write(&Mode_Pad, mem, 1);
+    mem_write(&Port_Pad, mem, 1);
+    mem_write(&xpadmax, mem, 2);
+    mem_write(&xpadmin, mem, 2);
+    mem_write(&ypadmax, mem, 2);
+    mem_write(&ypadmin, mem, 2);
+    mem_write(&xpadcentre, mem, 2);
+    mem_write(&ypadcentre, mem, 2);
+    for (s32 i = 0; i < 4; ++i) {
+        mem_write(notbut + i, mem, 1);
+    }
+    for (s32 i = 0; i < 7; ++i) {
+        mem_write(tab_key[i], mem, 1);
+    }
+    mem_write(&GameModeVideo, mem, 1);
+    mem_write(&P486, mem, 1);
+    mem_write(&SizeScreen, mem, 1);
+    mem_write(&saved_frequency, mem, 1);
+    mem_write(&fixon, mem, 1);
+    mem_write(&BackgroundOptionOn, mem, 1);
+    mem_write(&ScrollDiffOn, mem, 1);
+    mem_write(tRefRam2VramNormalFix, mem, 16);
+    mem_write(tRefRam2VramNormal, mem, 16);
+    mem_write(tRefTransFondNormal, mem, 16);
+    mem_write(tRefSpriteNormal, mem, 4);
+    mem_write(tRefRam2VramX, mem, 4);
+    mem_write(tRefVram2VramX, mem, 4);
+    mem_write(tRefSpriteX, mem, 4);
+
+    bool result = false;
+    if (mem->len == config_size) {
+        FILE* fp = fopen("RAYMAN.CFG", "wb");
+        if (fp != NULL) {
+            result = fwrite(mem->data, 1, mem->len, fp) == mem->len;
+            if (fclose(fp) != 0) {
+                result = false;
+            }
+        }
+    }
+
+    free(mem);
+    return result;
 }
 
 //75268
@@ -700,6 +771,7 @@ bool LoadOptionsOnDisk(void) {
     mem_t* mem = read_entire_file("RAYMAN.CFG", false);
     if (mem) {
         if (mem->len != 0x84) {
+            free(mem);
             return false;
         }
         mem_read(&language, mem, 1);

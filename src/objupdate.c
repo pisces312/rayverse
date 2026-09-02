@@ -686,22 +686,35 @@ void DO_PTI_ESQUIVE(obj_t* obj) {
 
 //61BB0
 void DoPrisePoingCollision(obj_t* obj, s16 sprite) {
-    print_once("Not implemented: DoPrisePoingCollision"); //stub
+    if (poing_obj->screen_x + 30 > obj->screen_x && obj->main_etat == 0 && obj->sub_etat == 0) {
+        skipToLabel(obj, 2, true);
+        prise_branchee = true;
+        obj->init_sub_etat = 2;
+        finBosslevel.helped_joe_2 = true;
+    }
 }
 
 //61C08
 void DO_PETIT_COUTEAU_COMMAND(obj_t* obj) {
-    print_once("Not implemented: DO_PETIT_COUTEAU_COMMAND"); //stub
+    if (obj->hit_points <= 2) {
+        obj->anim_frame = obj->hit_points - 1;
+    } else {
+        obj->anim_frame = obj->hit_points - 3;
+    }
 }
 
 //61C20
 void DoPetitCouteauPoingCollision(obj_t* obj, s16 sprite) {
-    print_once("Not implemented: DoPetitCouteauPoingCollision"); //stub
+    if (obj->hit_points == 2 || obj->hit_points == 4) {
+        --obj->hit_points;
+    }
 }
 
 //61C34
 void DO_TIRE_BOUCHON_COMMAND(obj_t* obj) {
-    print_once("Not implemented: DO_TIRE_BOUCHON_COMMAND"); //stub
+    DO_ONE_CMD(obj);
+    obj->speed_x = 0;
+    obj->speed_y = 0;
 }
 
 //61C4C

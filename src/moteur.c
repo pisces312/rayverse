@@ -2953,7 +2953,69 @@ void RAY_DEMIRAY(void) {
 
 //5B378
 void Ray_RayEcrase(void) {
-    print_once("Not implemented: Ray_RayEcrase"); //stub
+    if (RayEvts.tiny != RayEvts.squashed) {
+        return;
+    }
+
+    RayEvts.squashed = !RayEvts.squashed;
+    RayEvts.tiny = RayEvts.squashed;
+
+    if (RayEvts.squashed) {
+        rayevts_t saved_events;
+
+        rms = ray;
+        ray = level.objects[reduced_rayman_id];
+        ray.sprites = rms.sprites;
+        ray.animations = rms.animations;
+        ray.img_buffer = rms.img_buffer;
+
+        SauveRayEvts = RayEvts;
+        saved_events = RayEvts;
+        RayEvts = (rayevts_t) {0};
+        RayEvts.poing = saved_events.poing;
+        RayEvts.magicseed = saved_events.magicseed;
+        RayEvts.tiny = true;
+        RayEvts.firefly = saved_events.firefly;
+        RayEvts.squashed = true;
+    } else {
+        raytmp = rms;
+        RayEvts = SauveRayEvts;
+        rms = ray;
+        RayEvts.squashed = false;
+        RayEvts.tiny = false;
+        ray = raytmp;
+    }
+
+    ray.type = TYPE_RAYMAN;
+    ray.screen_x = rms.screen_x;
+    ray.screen_y = rms.screen_y;
+    ray.speed_x = rms.speed_x;
+    ray.speed_y = rms.speed_y;
+    ray.x = rms.x;
+    ray.y = rms.y;
+    ray.offset_bx = rms.offset_bx;
+    ray.offset_by = rms.offset_by;
+    ray.offset_hy = rms.offset_hy;
+    ray.anim_index = rms.anim_index;
+    ray.anim_frame = rms.anim_frame;
+    ray.flags.flip_x = rms.flags.flip_x;
+    ray.param = rms.param;
+    ray.main_etat = rms.main_etat;
+    ray.sub_etat = rms.sub_etat;
+    ray.follow_id = rms.follow_id;
+    ray.flags.alive = true;
+    ray.is_active = true;
+    ray.link = rms.link;
+    ray.iframes_timer = rms.iframes_timer;
+    ray.config = rms.config;
+    ray.timer = rms.timer;
+    ray.hit_points = rms.hit_points;
+    ray.init_hit_points = rms.init_hit_points;
+    ray.hit_sprite = rms.hit_sprite;
+
+    if (block_flags[calc_typ_trav(&ray, 2)] & 0x10) {
+        set_main_and_sub_etat(&ray, 0, 15);
+    }
 }
 
 //5B668
