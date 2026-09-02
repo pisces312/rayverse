@@ -1088,8 +1088,21 @@ void DoPoingCollisionDefault(obj_t* obj, s16 sprite) {
 }
 
 //2D85C
-void COLL_BOX_ALL_SPRITES(s16 a1, s16 a2, s16 a3, s16 a4, obj_t* obj) {
-    print_once("Not implemented: COLL_BOX_ALL_SPRITES"); //stub
+s32 COLL_BOX_ALL_SPRITES(s16 x, s16 y, s16 w, s16 h, obj_t* obj) {
+    s16 spr_x;
+    s16 spr_y;
+    s16 spr_w;
+    s16 spr_h;
+    s32 layers_count = obj->animations[obj->anim_index].layers_per_frame & 0x3FFF;
+
+    for (s32 i = 0; i < layers_count; i++) {
+        GET_SPRITE_POS(obj, (s16)i, &spr_x, &spr_y, &spr_w, &spr_h);
+        if (inter_box(x, y, w, h, spr_x, spr_y, spr_w, spr_h)) {
+            return i;
+        }
+    }
+
+    return -1;
 }
 
 //2D914

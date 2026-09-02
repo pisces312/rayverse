@@ -463,7 +463,7 @@ void SET_RAY_DIST(obj_t* obj);
 void do_boum(void);
 void DO_POING_COLLISION(void);
 void DoPoingCollisionDefault(obj_t* obj, s16 sprite);
-void COLL_BOX_ALL_SPRITES(s16 a1, s16 a2, s16 a3, s16 a4, obj_t* obj);
+s32 COLL_BOX_ALL_SPRITES(s16 x, s16 y, s16 w, s16 h, obj_t* obj);
 bool COLL_RAY_PIC(void);
 void COLL_RAY_BLK_MORTEL(void);
 void RAY_KO(void);

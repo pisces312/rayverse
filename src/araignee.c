@@ -242,8 +242,103 @@ void SPIDER_PLAFOND_REACT(obj_t* obj) {
 
 //1C75C
 void DO_DARD_PLAFOND_ALWAYS(obj_t* obj) {
-    // NOTE(Falcury): PS1 non-matching function, needing cleanup!!
-    print_once("Not implemented: DO_DARD_PLAFOND_ALWAYS"); //stub
+    s16 target_x;
+    s16 target_y;
+
+    if (obj->cmd != GO_RIGHT) {
+        s32 distance;
+        s32 ray_x = ray.x + ray.offset_bx;
+        s32 ray_y = ray.y + ray.offset_by;
+        s32 obj_x = obj->x + obj->offset_bx;
+
+        target_x = (s16)(ray_x - obj_x);
+        if (position_ray) {
+            target_y = (s16)(ray_y - (obj->y + obj->offset_by));
+        } else {
+            target_y = (s16)(ray.y + (ray.offset_by >> 1) - (obj->y + obj->offset_by));
+        }
+
+        distance = Abs(target_x) + Abs(target_y);
+        if (ray_y > obj->y + obj->offset_by - obj->offset_hy &&
+            ((ray_x > obj_x && !obj->flags.flip_x) ||
+             (ray_x < obj_x && obj->flags.flip_x))) {
+            if (distance > 0) {
+                target_x = (s16)(((s32)target_x * 32) / distance);
+                target_y = (s16)(((s32)target_y * 32) / distance);
+            }
+
+            if (target_y > obj->speed_y) {
+                obj->speed_y++;
+            } else if (target_y < obj->speed_y) {
+                obj->speed_y--;
+            }
+            if (obj->speed_y > 32) {
+                obj->speed_y = 32;
+            } else if (obj->speed_y < 0) {
+                obj->speed_y = 0;
+            }
+
+            if (obj->speed_y != 0) {
+                if (target_x > obj->speed_x) {
+                    obj->speed_x++;
+                } else if (target_x < obj->speed_x) {
+                    obj->speed_x--;
+                }
+            } else if (obj->flags.flip_x) {
+                obj->speed_x -= target_x > obj->speed_x;
+            } else {
+                obj->speed_x += target_x < obj->speed_x;
+            }
+
+            if (obj->speed_x > 32) {
+                obj->speed_x = 32;
+            } else if (obj->speed_x < -32) {
+                obj->speed_x = -32;
+            }
+        } else {
+            obj->speed_x *= 2;
+            if (obj->speed_x > 32) {
+                obj->speed_x = 32;
+            } else if (obj->speed_x < -32) {
+                obj->speed_x = -32;
+            }
+
+            obj->speed_y *= 2;
+            if (obj->speed_y > 32) {
+                obj->speed_y = 32;
+            }
+        }
+    } else {
+        s32 ray_x = ray.x + ray.offset_bx;
+        s32 obj_x = obj->x + obj->offset_bx;
+
+        if (ray_x > obj_x) {
+            obj->flags.flip_x = 0;
+        } else if (ray_x < obj_x) {
+            obj->flags.flip_x = 1;
+        }
+    }
+
+    if (obj->speed_x == 0 && obj->speed_y == 0) {
+        obj->speed_x = obj->flags.flip_x ? -1 : 1;
+    }
+
+    s32 abs_speed_x = Abs(obj->speed_x);
+    if (abs_speed_x * 3 < obj->speed_y || abs_speed_x * 4 < obj->speed_y * 3) {
+        obj->anim_frame = 0;
+    } else if (abs_speed_x * 3 < obj->speed_y * 4) {
+        obj->anim_frame = 11;
+    } else if (abs_speed_x < obj->speed_y * 3) {
+        obj->anim_frame = 10;
+    } else {
+        obj->anim_frame = 9;
+    }
+
+    if (obj->speed_x > 0 && obj->flags.flip_x) {
+        obj->flags.flip_x = 0;
+    } else if (obj->speed_x < 0 && !obj->flags.flip_x) {
+        obj->flags.flip_x = 1;
+    }
 }
 
 //1CAC4

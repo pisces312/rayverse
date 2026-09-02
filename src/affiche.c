@@ -361,7 +361,12 @@ void DISPLAY_POINT(s16 x, s16 y) {
 
 //1987C
 void DISPLAY_PTS_TO(s16 origin_x, s16 origin_y, s16 dest_x, s16 dest_y, s16 a5) {
-    //stub
+    s16 screen_offset_x = 52 - xmap;
+    s16 screen_offset_y = 35 - ymap;
+    Bresenham(DISPLAY_POINT,
+              origin_x + screen_offset_x, origin_y + screen_offset_y,
+              dest_x + screen_offset_x, dest_y + screen_offset_y,
+              7, a5);
 }
 
 //198C4
