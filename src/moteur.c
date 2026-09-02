@@ -570,11 +570,13 @@ void DO_ANIM(obj_t* obj) {
     }
 
     anim_t* anim = obj->animations + obj->anim_index;
-    if ((obj->change_anim_mode == ANIMMODE_RESET_IF_NEW && obj->anim_index != prev_anim_index) || obj->change_anim_mode == ANIMMODE_RESET) {
-        if (eta->flags & eta_flags_0x10_anim_reverse) {
-            obj->anim_frame = anim->frames_count - 1;
-        } else {
-            obj->anim_frame = 0;
+    if (obj->change_anim_mode == ANIMMODE_RESET_IF_NEW || obj->change_anim_mode == ANIMMODE_RESET) {
+        if (obj->change_anim_mode == ANIMMODE_RESET || obj->anim_index != prev_anim_index) {
+            if (eta->flags & eta_flags_0x10_anim_reverse) {
+                obj->anim_frame = anim->frames_count - 1;
+            } else {
+                obj->anim_frame = 0;
+            }
         }
         if (obj->is_active != 0) {
             PlaySnd(eta->sound_index, obj->id);

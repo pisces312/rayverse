@@ -2033,6 +2033,7 @@ void rayfallsinwater(void) {
     ray_se_noie = true;
     allocate_splash(&ray);
     terminateFistWhenRayDies();
+    start_cd_perdu();
 }
 
 //701A8
@@ -2107,6 +2108,7 @@ void RAY_HURT(void) {
         } else {
             ray_mode = MODE_3_MORT_DE_RAYMAN;
         }
+        start_cd_perdu();
         jump_time = 0;
     }
 }
