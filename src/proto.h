@@ -523,9 +523,9 @@ void DO_COLL_RAY_CYMBALE(obj_t* cym_obj);
 
 // dark.c
 void PlaceDarkPhase1et2(obj_t* obj);
-void dark_attaque_suivante(obj_t* obj);
+void dark_attaque_suivante(void);
 void init_vitraux(void);
-void poing_face_obj(obj_t* obj);
+bool poing_face_obj(obj_t* obj);
 void DARK_phase1(obj_t* obj);
 void DARK_phase3(obj_t* obj);
 void DO_DARK_COMMAND(obj_t* mr_drk_obj);
@@ -535,15 +535,15 @@ void DO_DARK_SORT_COMMAND(obj_t* obj);
 void DO_DARK_SORT_COLLISION(obj_t* obj);
 void allocate_DARK_SORT(s16 x, s16 y, s16 sub_etat, s16 iframes);
 void DoAnnuleDarkSortRaymanCollision(obj_t* obj);
-void corde_en_bas(obj_t* obj);
-void corde_en_haut(obj_t* obj);
+void corde_en_bas(void);
+void corde_en_haut(bool attach_fist);
 void init_corde(obj_t* obj);
 void goto_phase1(obj_t* obj);
 void goto_phase2(obj_t* obj);
 void goto_phase3(obj_t* obj);
 void goto_phase5(obj_t* obj);
 void DO_VITRAIL_COMMAND(obj_t* obj);
-void allume_vitraux(u8 (*param_1)[5]);
+void allume_vitraux(const u8 pattern[5]);
 
 // display.c
 s16 display_inter_anim(u32 a1);
@@ -779,8 +779,8 @@ void FreeDetectDriver(void);
 
 // hybrid.c
 void allocateSTOSKO(void);
-void allocateMOSKITOMAMA(obj_t* obj);
-void allocateMOSKITOSAXO(obj_t* obj);
+void allocateMOSKITOMAMA(void);
+void allocateMOSKITOSAXO(void);
 void doMOSAMScommand(obj_t* obj);
 void DoMOSAMSPoingCollision(obj_t* obj, s16 sprite);
 void allocateStoskoClaw(obj_t* obj);
@@ -791,12 +791,12 @@ void DO_HYB_BBF2_POING_COLLISION(obj_t* obj, s16 sprite);
 void AllocateTirBBF2(obj_t* obj);
 void DO_HYB_BBF2_LAS(obj_t* obj);
 void DoHybBBF2LasRaymanCollision(obj_t* obj);
-void OBJ_IN_COL_ZDC(obj_t* obj1, obj_t* obj2);
+s32 OBJ_IN_COL_ZDC(obj_t* obj1, obj_t* obj2);
 void AllocateDarkPhase2(obj_t* obj);
 void DO_DARK2_AFFICHE_TEXT(void);
 void DO_DARK_PHASE2_COMMAND(obj_t* obj);
 void DO_DARK2_SORT_COMMAND(obj_t* obj);
-void allocate_DARK2_SORT(obj_t* obj);
+void allocate_DARK2_SORT(s16 x, s16 y, s16 sub_etat, s16 iframes);
 void DoFlammeCommand(obj_t* obj);
 void DoFlammeRaymanCollision(obj_t* obj);
 void AllocateFlammes(s16 a1);

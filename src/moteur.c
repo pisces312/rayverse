@@ -1642,7 +1642,9 @@ void DO_OBJECTS(void) {
         if ((flags[ot] & flags3_8_switch_off) ||
             (ot == TYPE_161_WIZ && obj->sub_etat == 23) ||
             (ot == TYPE_83_EXPLOSION && obj->sub_etat == 1) ||
-            (ot == TYPE_33_DARK2_SORT && obj->sub_etat == 35)
+            /* Substate 35 relays the spell on its last animation frame.  It
+               must reach DO_DARK2_SORT_COMMAND before ordinary EOA cleanup. */
+            (ot == TYPE_33_DARK2_SORT && obj->sub_etat != 35)
         ) {
             switchOff(obj);
         }

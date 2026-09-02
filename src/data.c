@@ -1978,6 +1978,7 @@ extern s16 Toon_Speeds_x[7] INIT(= {-3, -2, -1, 0, 1, 1, 3}); //962BC
 extern s16 Toon_Speeds_y[7] INIT(= {-3, -5, -4, -6, -5, -3, -3}); //962CA
 
 extern s16 oscille[29] INIT(= {0, 4, 7, 9, 10, 9, 7, 4, 0, -2, -4, -5, -6, -5, -4, -2, 0, 1, 2, 3, 2, 1, 0, -1, -2, -1, 0, 1, 0}); //9632C
+extern u8 dark_sequence[3] INIT(= {0, 1, 2}); //96366
 
 //96369
 extern u8 vitrail_clignotement[4][5] INIT(= {
@@ -3238,12 +3239,12 @@ extern s16 ymapsave; //CF8B8
 extern s16 scroll_y; //CF8BA
 extern s16 black_ray_obj_id; //CF8BC
 extern u16 black_fist_obj_id; //CF8BE
-extern u16 final_pass_n; //CF8C0
-extern u16 final_pass_a; //CF8C2
+extern u16 FinalPassN; //CF8C0
+extern u16 FinalPassA; //CF8C2
 extern u16 ray_old_main_etat; //CF8C4
-extern u16 final_pass_f; //CF8C6
+extern u16 FinalPassF; //CF8C6
 extern s16 moskitomama_gauche_obj_id; //CF8C8
-extern u16 final_pass_x; //CF8CA
+extern s16 FinalPassX; //CF8CA
 extern s16 rideau_obj_id; //CF8CC
 extern s16 corde_dark_obj_id; //CF8CE
 extern s16 stosko_obj_id; //CF8D0
@@ -3514,8 +3515,8 @@ extern s32 dword_E0B7C; //E0B7C
 extern s32 tchatch_voice_id; //E0B80
 extern obj_t* dark_obj; //E0B84
 extern char txt_dark2[100]; //E0B88
-extern u32 dword_E0BEC; //E0BEC
-extern u32 dword_E0BF0; //E0BF0
+extern obj_t* TirBBF2G; //E0BEC
+extern obj_t* TirBBF2D; //E0BF0
 extern s16 PosArYToon2; //E0BF4
 extern s16 PosArXToon2; //E0BF6
 extern s16 PosArYToon1; //E0BF8
@@ -3529,12 +3530,12 @@ extern s16 dark2_rayon_dy_1; //E0C06
 extern s16 dark2_rayon_dy_2; //E0C08
 extern s16 flamme_gauche_id; //E0C0A
 extern s16 phase_dark2; //E0C0C
-extern s16 dark2_rayon_2_pos_x; //E0C0E
-extern s16 dark2_rayon_1_pos_x; //E0C10
+extern s16 PosXSin2; //E0C0E
+extern s16 PosXSin1; //E0C10
 extern s16 VitesseYText; //E0C12
 extern s16 temps_text; //E0C14
-extern s16 dark2_rayon_2_pos_y; //E0C16
-extern s16 dark2_rayon_1_pos_y; //E0C18
+extern s16 PosYSin2; //E0C16
+extern s16 PosYSin1; //E0C18
 extern s16 YPosBBF2D; //E0C1C
 extern s16 YPosBBF2G; //E0C1E
 extern s16 NiveauSol; //E0C20

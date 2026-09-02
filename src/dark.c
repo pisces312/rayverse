@@ -1,32 +1,213 @@
 
 //32A70
 void PlaceDarkPhase1et2(obj_t* obj) {
-    print_once("Not implemented: PlaceDarkPhase1et2"); //stub
+    obj->y = obj->init_y = firstFloorBelow(obj) - obj->offset_by;
+
+    /* PC and Android use +144 here; the PS1 encounter places Dark at +160. */
+    obj->x = obj->init_x = xmapmax + 144;
 }
 
 //32AA8
-void dark_attaque_suivante(obj_t* obj) {
-    print_once("Not implemented: dark_attaque_suivante"); //stub
+void dark_attaque_suivante(void) {
+    ++dark_attaque;
+    type_dark_attaque = dark_attaque == 3 ? 3 : dark_sequence[dark_attaque];
 }
 
 //32AD8
 void init_vitraux(void) {
-    print_once("Not implemented: init_vitraux"); //stub
+    u8 glass_index = 0;
+
+    for (s32 i = 0; i < level.nb_objects; ++i) {
+        if (glass_index >= LEN(VitrauxInfos)) {
+            return;
+        }
+
+        obj_t* obj = &level.objects[i];
+        if (obj->type == TYPE_247_VITRAIL) {
+            vitraux_info_t* info = &VitrauxInfos[glass_index];
+            info->field_0 = obj->x + obj->offset_bx;
+            info->field_2 = obj->y + obj->offset_by;
+            info->field_4 = i;
+            info->field_5 = glass_index;
+            info->field_6 = 0;
+            info->field_7 = 0;
+            info->field_8 = 0;
+
+            /* PC/Android activate these object overlays here; PS1 does not. */
+            obj->flags.alive = true;
+            obj->is_active = true;
+            obj->param = glass_index;
+            ++glass_index;
+        }
+    }
 }
 
 //32B90
-void poing_face_obj(obj_t* obj) {
-    print_once("Not implemented: poing_face_obj"); //stub
+bool poing_face_obj(obj_t* obj) {
+    s32 diff_x = obj->x + obj->offset_bx - (poing_obj->x + poing_obj->offset_bx);
+    return (diff_x > 0) == (bool)poing_obj->flags.flip_x;
 }
 
 //32BD4
 void DARK_phase1(obj_t* obj) {
-    print_once("Not implemented: DARK_phase1"); //stub
+    if (corde_dark_obj_id == -1 || obj->main_etat != 0) {
+        return;
+    }
+
+    obj_t* rope = &level.objects[corde_dark_obj_id];
+
+    if (poing_obj_id != -1) {
+        set_main_and_sub_etat(poing_obj, 5, 64);
+        poing_obj->x = rope->x + rope->offset_bx - poing_obj->offset_bx;
+        poing_obj->y = rope->y + rope->offset_by - poing_obj->offset_by - 5;
+        if (!poing_obj->is_active) {
+            /* The PC active-object list requires this; PS1 has no equivalent call. */
+            add_alwobj(poing_obj);
+        }
+        poing_obj->is_active = true;
+        poing_obj->flags.alive = true;
+    }
+
+    switch (obj->sub_etat) {
+        case 40:
+            if (EOA(obj)) {
+                goto_phase2(obj);
+            }
+            break;
+
+        case 27:
+            rope->y = MAX(rope->y - 8, corde_y_haut);
+            if (poing_obj_id != -1) {
+                poing_obj->y = rope->y + rope->offset_by - poing_obj->offset_by - 5;
+            }
+
+            if (EOA(obj)) {
+                if (--rope->param == 0) {
+                    set_main_and_sub_etat(obj, 0, 40);
+                } else {
+                    rope->iframes_timer = 0;
+                    set_main_and_sub_etat(obj, 0, 28);
+                }
+            }
+            break;
+
+        case 29:
+            rope->y = MIN(rope->y + 6, corde_y_bas);
+            if (poing_obj_id != -1) {
+                poing_obj->y = rope->y + rope->offset_by - poing_obj->offset_by - 5;
+            }
+
+            if (EOA(obj)) {
+                rope->iframes_timer = 0;
+                set_main_and_sub_etat(obj, 0, 26);
+            } else if (ray.main_etat == 2) {
+                set_main_and_sub_etat(obj, 0, 27);
+            }
+            break;
+
+        case 26:
+        case 28: {
+            s16 diff_x = ray.x + ray.offset_bx - (corde_x + rope->offset_bx);
+            s16 diff_y = ray.y + ray.offset_by - (corde_y_bas + rope->offset_by);
+            s32 distance_squared = diff_x * diff_x + diff_y * diff_y;
+            bool ray_near_rope = Abs(diff_x) < 40 || distance_squared < 3000;
+
+            if (obj->sub_etat == 26) {
+                if (ray_near_rope || (ray.main_etat == 2 && ray.sub_etat == 0)) {
+                    set_main_and_sub_etat(obj, 0, 27);
+                } else if ((get_eta(&ray)->flags & 0x40) &&
+                           Abs(diff_y) < 30 && distance_squared < 3000) {
+                    set_main_and_sub_etat(obj, 0, 27);
+                } else if (rope->iframes_timer < LEN(oscille)) {
+                    rope->y = corde_y_bas - oscille[rope->iframes_timer];
+                    if (poing_obj_id != -1) {
+                        poing_obj->y = rope->y + rope->offset_by - poing_obj->offset_by - 5;
+                    }
+                    ++rope->iframes_timer;
+                }
+            } else if (!ray_near_rope && ray.main_etat != 2) {
+                set_main_and_sub_etat(obj, 0, 29);
+            } else if (rope->iframes_timer < LEN(oscille)) {
+                rope->y = corde_y_haut + oscille[rope->iframes_timer];
+                if (poing_obj_id != -1) {
+                    poing_obj->y = rope->y + rope->offset_by - poing_obj->offset_by - 5;
+                }
+                ++rope->iframes_timer;
+            }
+            break;
+        }
+    }
 }
 
 //32FAC
 void DARK_phase3(obj_t* obj) {
-    print_once("Not implemented: DARK_phase3"); //stub
+    /* PS1 force-enables Rayman's fist here; PC and Android do not. */
+    switch (type_dark_attaque) {
+        case 0:
+            if (stosko_obj_id != -1) {
+                obj_t* boss = &level.objects[stosko_obj_id];
+                if (boss->param == 0) {
+                    boss->param = 2;
+                    allume_vitraux(vitrail_clignotement[0]);
+                    flags[boss->type] |= flags0_0x80_boss;
+                    scrollLocked = true;
+                    allocateSTOSKO();
+                } else if (boss->param == 1 && !boss->is_active) {
+                    flags[boss->type] &= ~flags0_0x80_boss;
+                    scrollLocked = false;
+                    boss->flags.alive = false;
+                    boss->is_active = false;
+                    dark_attaque_suivante();
+                }
+            }
+            break;
+
+        case 1:
+            if (moskitomama_droite_obj_id != -1) {
+                obj_t* boss = &level.objects[moskitomama_droite_obj_id];
+                if (boss->param == 0) {
+                    boss->param = 2;
+                    if (moskitomama_gauche_obj_id != -1) {
+                        level.objects[moskitomama_gauche_obj_id].param = 2;
+                    }
+                    allume_vitraux(vitrail_clignotement[1]);
+                    flags[boss->type] |= flags0_0x80_boss;
+                    scrollLocked = true;
+                    allocateMOSKITOMAMA();
+                } else if (boss->param == 1 && !boss->is_active) {
+                    flags[boss->type] &= ~flags0_0x80_boss;
+                    scrollLocked = false;
+                    boss->flags.alive = false;
+                    boss->is_active = false;
+                    dark_attaque_suivante();
+                }
+            }
+            break;
+
+        case 2:
+            if (moskitosaxo_obj_id != -1) {
+                obj_t* boss = &level.objects[moskitosaxo_obj_id];
+                if (boss->param == 0) {
+                    boss->param = 2;
+                    allume_vitraux(vitrail_clignotement[2]);
+                    flags[boss->type] |= flags0_0x80_boss;
+                    scrollLocked = true;
+                    allocateMOSKITOSAXO();
+                } else if (boss->param == 1 && !boss->is_active) {
+                    flags[boss->type] &= ~flags0_0x80_boss;
+                    scrollLocked = false;
+                    boss->flags.alive = false;
+                    boss->is_active = false;
+                    dark_attaque_suivante();
+                }
+            }
+            break;
+
+        case 3:
+            allume_vitraux(vitrail_clignotement[3]);
+            goto_phase5(obj);
+            break;
+    }
 }
 
 //331FC
@@ -99,19 +280,19 @@ void DO_DARK_COMMAND(obj_t* mr_drk_obj) {
                         break;
                     case 22:
                         byte_DF74C = 2;
-                        allume_vitraux((u8(*)[5]) vitrail_clignotement[0]);
+                        allume_vitraux(vitrail_clignotement[0]);
                         allocate_DARK_SORT(sort_x, sort_y, 18, 3);
                         allocate_DARK_SORT(sort_x, sort_y, 18, 5);
                         break;
                     case 23:
                         byte_DF74C = 2;
-                        allume_vitraux((u8(*)[5]) vitrail_clignotement[1]);
+                        allume_vitraux(vitrail_clignotement[1]);
                         allocate_DARK_SORT(sort_x, sort_y, 19, 1);
                         allocate_DARK_SORT(sort_x, sort_y, 19, 4);
                         break;
                     case 24:
                         byte_DF74C = 2;
-                        allume_vitraux((u8(*)[5]) vitrail_clignotement[2]);
+                        allume_vitraux(vitrail_clignotement[2]);
                         allocate_DARK_SORT(sort_x, sort_y, 20, 1);
                         allocate_DARK_SORT(sort_x, sort_y, 20, 2);
                         break;
@@ -322,7 +503,8 @@ void allocate_DARK_SORT(s16 x, s16 y, s16 sub_etat, s16 iframes) {
         cur_obj->flags.alive = 1;
         cur_obj->is_active = 1;
 #ifdef PC
-        add_alwobj(cur_obj);
+        /* This recycled slot was already active and therefore remains in the
+           PC always-object list; re-adding it only creates a duplicate. */
 #endif
         set_main_and_sub_etat(cur_obj, 0, sub_etat);
         cur_obj->anim_frame = 0;
@@ -346,46 +528,192 @@ void DoAnnuleDarkSortRaymanCollision(obj_t* obj) {
 }
 
 //33BBC
-void corde_en_bas(obj_t* obj) {
-    print_once("Not implemented: corde_en_bas"); //stub
+void corde_en_bas(void) {
+    if (corde_dark_obj_id != -1) {
+        obj_t* rope = &level.objects[corde_dark_obj_id];
+        rope->x = corde_x;
+        rope->init_x = corde_x;
+        rope->y = corde_y_bas;
+        rope->init_y = corde_y_bas;
+    }
 }
 
 //33C00
-void corde_en_haut(obj_t* obj) {
-    print_once("Not implemented: corde_en_haut"); //stub
+void corde_en_haut(bool attach_fist) {
+    if (corde_dark_obj_id == -1) {
+        return;
+    }
+
+    obj_t* rope = &level.objects[corde_dark_obj_id];
+    rope->x = corde_x;
+    rope->y = corde_y_haut;
+
+    if (attach_fist) {
+        set_main_and_sub_etat(poing_obj, 5, 64);
+        poing_obj->x = rope->x + rope->offset_bx - poing_obj->offset_bx;
+        poing_obj->y = rope->y + rope->offset_by - poing_obj->offset_by - 5;
+        if (!poing_obj->is_active) {
+            add_alwobj(poing_obj);
+        }
+        poing_obj->is_active = true;
+        poing_obj->flags.alive = true;
+    }
 }
 
 //33CB4
 void init_corde(obj_t* obj) {
-    print_once("Not implemented: init_corde"); //stub
+    corde_x = 0;
+    corde_y_bas = obj->y;
+    corde_y_haut = ymap - 184;
+
+    if (corde_dark_obj_id != -1) {
+        obj_t* rope = &level.objects[corde_dark_obj_id];
+        corde_y_haut = obj->y + obj->offset_by - rope->offset_by - 148;
+    }
 }
 
 //33D28
 void goto_phase1(obj_t* obj) {
-    print_once("Not implemented: goto_phase1"); //stub
+    dark_phase = 1;
+    scroll_end_x = 0;
+    scroll_start_x = 0;
+    scroll_end_y = ymap;
+    scroll_start_y = ymap;
+    flags[obj->type] &= ~flags0_0x80_boss;
+    obj->param = 0;
+    scrollLocked = false;
+    RayEvts.poing = false;
+
+    PlaceDarkPhase1et2(obj);
+    init_corde(obj);
+
+    if (corde_dark_obj_id != -1) {
+        obj_t* rope = &level.objects[corde_dark_obj_id];
+        rope->param = 3;
+        rope->iframes_timer = LEN(oscille);
+    }
+
+    corde_en_bas();
+    set_main_and_sub_etat(obj, 0, 26);
 }
 
 //33DD8
 void goto_phase2(obj_t* obj) {
-    print_once("Not implemented: goto_phase2"); //stub
+    dark_phase = 2;
+    scroll_end_x = 0;
+    scroll_start_x = 0;
+    scroll_end_y = ymap;
+    scroll_start_y = ymap;
+    flags[obj->type] &= ~flags0_0x80_boss;
+    scrollLocked = false;
+
+    PlaceDarkPhase1et2(obj);
+    init_corde(obj);
+    corde_en_haut(true);
+
+    obj->param = 0;
+    obj->flags.alive = true;
+    obj->is_active = true;
+    AllocateDarkPhase2(obj);
 }
 
 //33E5C
 void goto_phase3(obj_t* obj) {
-    print_once("Not implemented: goto_phase3"); //stub
+    dark_phase = 3;
+    scroll_end_x = 0;
+    scroll_start_x = 0;
+    scroll_end_y = ymap;
+    scroll_start_y = ymap;
+    flags[obj->type] &= ~flags0_0x80_boss;
+    scrollLocked = false;
+
+    PlaceDarkPhase1et2(obj);
+    init_corde(obj);
+    corde_en_haut(false);
+
+    obj->x = 0;
+    obj->init_x = 0;
+    obj->speed_x = 0;
+    obj->speed_y = 0;
+    obj->param = 0;
+    obj->y = ymap - obj->offset_by - 20;
+    obj->init_y = obj->y;
+    obj->flags.alive = true;
+    obj->is_active = true;
+    set_main_and_sub_etat(obj, 0, 21);
+
+    dark_attaque = 0;
+    type_dark_attaque = dark_sequence[0];
 }
 
 //33F28
 void goto_phase5(obj_t* obj) {
-    print_once("Not implemented: goto_phase5"); //stub
+    dark_phase = 5;
+    scroll_end_x = 0;
+    scroll_start_x = 0;
+    scroll_end_y = ymap;
+    scroll_start_y = ymap;
+    flags[obj->type] &= ~flags0_0x80_boss;
+    scrollLocked = false;
+
+    PlaceDarkPhase1et2(obj);
+    init_corde(obj);
+    corde_en_haut(false);
+
+    if (RayEvts.tiny) {
+        DO_NOVA(&ray);
+        RAY_DEMIRAY();
+    }
+
+    obj->x = 0;
+    obj->init_x = 0;
+    obj->param = 0;
+    obj->y = ymap - obj->offset_by - 20;
+    obj->init_y = obj->y;
+    obj->flags.alive = false;
+    obj->is_active = false;
+
+    fin_boss = true;
+    finBosslevel.mr_dark = true;
+
+    /* PC/Android initialize the final text pass here; PS1 omits this state. */
+    FinalPassX = -60;
+    FinalPassA = 0;
+    FinalPassF = 0;
+    FinalPassN = 0;
+    TextDark2_Affiche = true;
 }
 
 //34024
 void DO_VITRAIL_COMMAND(obj_t* obj) {
-    print_once("Not implemented: DO_VITRAIL_COMMAND"); //stub
+    if (obj->param < LEN(VitrauxInfos)) {
+        vitraux_info_t* info = &VitrauxInfos[obj->param];
+        if (info->field_7 != 0) {
+            obj->display_prio = 4;
+            if (--info->field_8 == 0) {
+                info->field_8 = 100;
+                --info->field_7;
+                if (info->field_7 == 0) {
+                    obj->display_prio = 0;
+                }
+            }
+        } else {
+            obj->display_prio = 0;
+        }
+    } else {
+        obj->display_prio = 0;
+    }
 }
 
 //34094
-void allume_vitraux(u8 (*param_1)[5]) {
-    print_once("Not implemented: allume_vitraux"); //stub
+void allume_vitraux(const u8 pattern[5]) {
+    /* PS1 flashes background primitives; PC/Android drive five VITRAIL objects. */
+    for (s32 i = 0; i < LEN(VitrauxInfos); ++i) {
+        vitraux_info_t* info = &VitrauxInfos[i];
+        if (info->field_7 == 0) {
+            info->field_7 = pattern[i];
+            info->field_8 = 100;
+            level.objects[info->field_4].anim_frame = 0;
+        }
+    }
 }
