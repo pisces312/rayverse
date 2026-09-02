@@ -191,10 +191,12 @@ void clear_borders_Normal(u8* buffer, s32 height, s32 width) {
 
 //14CFA
 void Copy_Plan0Diff_To_Buf(u8* source, u8* dest, s32 width, s32 height, s32 draw_width) {
-    for (s32 i = 0; i < height; ++i) {
-        memcpy(dest, source, draw_width);
-        dest += SCREEN_WIDTH;
-        source += width;
+    if (draw_width > 0 && height > 0) {
+        for (s32 i = 0; i < height; ++i) {
+            memcpy(dest, source, draw_width);
+            dest += SCREEN_WIDTH;
+            source += width;
+        }
     }
 }
 

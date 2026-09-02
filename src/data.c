@@ -2845,6 +2845,8 @@ extern char* language_txt[304]; //C2B48
 
 extern options_jeu_t options_jeu_save; //C2F58
 extern options_jeu_t options_jeu; //C2F78
+extern s16 y_ray[4]; //C2F98
+extern s16 x_ray[4]; //C2FA0
 
 extern u32 gros_patai_src[1200]; //C2FA8
 extern s32 block_add[1200]; //C4268
@@ -3091,10 +3093,10 @@ extern s16 word_CF79E; //CF79E
 extern s16 action; //CF7A2
 extern s16 nbre_options; //CF7A4
 extern s16 positiony2; //CF7A6
-extern s16 old_x_luc; //CF7A8
+extern s16 old_y_luc; //CF7A8
 extern s16 positionx2; //CF7AA
 extern s16 debut_titre; //CF7AC
-extern s16 old_y_luc; //CF7AE
+extern s16 old_x_luc; //CF7AE
 extern s16 choix_menu; //CF7B0
 extern s16 ADDLUCLIP; //CF7B2
 extern s16 ecarty; //CF7B4
@@ -3107,8 +3109,8 @@ extern s16 positionx; //CF7C0
 extern s16 fichier_a_copier; //CF7C2
 extern s16 debut_options; //CF7C4
 extern s16 rayon_luciole; //CF7C6
-extern s16 x_luc; //CF7C8
-extern s16 y_luc; //CF7CA
+extern s16 y_luc; //CF7C8
+extern s16 x_luc; //CF7CA
 extern s16 coeffktxt; //CF7CC
 extern s16 y_main_luc; //CF7CE
 extern s16 x_main_luc; //CF7D0

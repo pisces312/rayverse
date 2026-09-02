@@ -2492,7 +2492,7 @@ void INIT_MOTEUR(u8 new_lvl) {
         RayEvts.firefly = 0;
     }
     if (RayEvts.firefly) {
-        INIT_LUCIOLE(); //TODO
+        INIT_LUCIOLE();
     }
     DO_OBJECTS();
     if (mp.width <= 20 && (SizeScreen == 0 || GameModeVideo == MODE_X)) {
@@ -2728,7 +2728,7 @@ void DO_MOTEUR(void) {
     }
 
     if (RayEvts.firefly) {
-        DO_LUCIOLE(); //TODO
+        DO_LUCIOLE();
     }
 
     if (num_world == world_3_mountain) {

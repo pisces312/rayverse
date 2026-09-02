@@ -564,7 +564,7 @@ void DoPaletteSpecialPC(void) {
                     numero_palette_special = 1;
                 }
             } else {
-                SetPalette(&rvb_special[numero_palette_special], 0, 255);
+                SetPalette(&rvb_special[numero_palette_special], 1, 255);
                 ++numero_palette_special;
             }
             if (numero_palette_special == 15) {
@@ -573,7 +573,7 @@ void DoPaletteSpecialPC(void) {
         } else if ((num_world == 1 && num_level == 9) || (num_world == 2 && num_level == 4) || (num_world == 4 && num_level == 9)) {
             ++CompteurEclair;
             if (CompteurEclair >= ProchainEclair || numero_palette_special != 0) {
-                SetPalette(&rvb_special[numero_palette_special], 0, 255);
+                SetPalette(&rvb_special[numero_palette_special], 1, 255);
                 if (numero_palette_special == 0) {
                     PlaySnd_old(195);
                     ++numero_palette_special;

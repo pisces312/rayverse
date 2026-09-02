@@ -875,10 +875,10 @@ void LoadPcxOptions(u8* buffer, s32 resource_id, s16* width, s16* height, rgb_pa
 // luciole.c
 void get_luciole(void);
 void CLEAR_FIXE_LUCIOLE(void);
-void set_luciole(s32 a1, s32 a2);
-void init_aff_luciole(s32 a1, s32 a2);
-void plot2line(s32 a1, s32 a2, s32 a3, s32 a4, s32 a5);
-void aff_luciole(s32 a1, s32 a2, s32 a3, s32 a4);
+void set_luciole(s32 screen_x, s32 screen_y);
+void init_aff_luciole(s32 screen_x, s32 screen_y);
+void plot2line(s32 center_x, s32 center_y, s32 inner_x, s32 y_offset, u8* draw_buf);
+void aff_luciole(s32 center_x, s32 center_y, s32 radius, u8* draw_buf);
 void Display_and_free_luciole(u8* draw_buf);
 void free_luciole(void);
 void INIT_LUCIOLE(void);

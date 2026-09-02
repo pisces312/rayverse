@@ -18,7 +18,7 @@ void DO_GROS_MOTEUR_NORMAL(u8 need_update_display_map) {
             DO_MOTEUR2(); //TODO
         }
     }
-    get_luciole(); //TODO
+    get_luciole();
     if (need_update_display_map) {
         update_display_map(&BIG_MAP);
     }
@@ -85,7 +85,7 @@ void DO_MAIN_LOOP_PC_NORMAL(u8* a1) {
         if (need_timer) {
             clock_ticks();
         }
-        CLEAR_FIXE_LUCIOLE(); //TODO
+        CLEAR_FIXE_LUCIOLE();
 
         // Draw background
         if (BackgroundOn && FondAutorise == 1) {
@@ -110,7 +110,7 @@ void DO_MAIN_LOOP_PC_NORMAL(u8* a1) {
             display_flocons_before(); //TODO
         }
 
-        Display_and_free_luciole(DrawBufferNormal); //TODO
+        Display_and_free_luciole(DrawBufferNormal);
         clear_borders_Normal(DrawBufferNormal + Bloc_lim_W1 + (Bloc_lim_H1 << 8) - 4 + (Bloc_lim_H1 << 6),
                              Bloc_lim_H2 - Bloc_lim_H1,
                              Bloc_lim_W2 - Bloc_lim_W1 + 4); //TODO

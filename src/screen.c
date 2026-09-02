@@ -152,24 +152,20 @@ void Display_Back_Screen(s16 plan_width, s16 plan_height, s16 w1, s16 h1, s16 w2
             bande_t* bande = Bande + i;
             u8* source_buffer_pos = bande->source_buffer_pos + bande->field_6 + w1;
             u8* dest_buffer_pos = bande->draw_buffer_pos - SCREEN_WIDTH * v68 + w1;
-            s32 draw_height = bande->length;
             s32 v34 = bande->offset - v68;
             s32 v36 = bande->length + v34;
             if (v34 < 0 && v36 > 0 && bande->length != 0) {
-                draw_height = v36;
                 dest_buffer_pos -= SCREEN_WIDTH * v34;
                 source_buffer_pos -= plan_width * v34;
                 v34 = 0;
             }
-            if (y < v36 && v34 < h2) {
-                if (y <= v34) {
-                    if (h2 < v36) {
-                        draw_height = h2 - v34;
-                    }
-                    Copy_Plan0_To_Buf(source_buffer_pos - BufferNormalDeplt, dest_buffer_pos, plan_width, draw_height, w2 - w1);
-                } else {
-                    Copy_Plan0_To_Buf(source_buffer_pos + (y - v34) * plan_width - BufferNormalDeplt, dest_buffer_pos + SCREEN_WIDTH * (y - v34), plan_width, draw_height - (y - v34), w2 - w1);
-                }
+            s32 copy_y1 = MAX(y, v34);
+            s32 copy_y2 = MIN(h2, v36);
+            if (copy_y1 < copy_y2) {
+                s32 source_y = copy_y1 - v34;
+                Copy_Plan0_To_Buf(source_buffer_pos + source_y * plan_width - BufferNormalDeplt,
+                                  dest_buffer_pos + source_y * SCREEN_WIDTH,
+                                  plan_width, copy_y2 - copy_y1, w2 - w1);
             }
         }
         plan_width /= 2;
