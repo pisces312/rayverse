@@ -1484,7 +1484,7 @@ void Display_Back_Screen(s16 plan_width, s16 plan_height, s16 w1, s16 h1, s16 w2
 void Display_Sprite_On_Front(s16 plan_width, s16 plan_height, s16 w1, s16 h1, s16 w2, s16 h2);
 void Calcul_Deplacement_Bande(s16 x, s16 plan_width, s16 plan_height);
 void Init_Effet_Chaleur(s16 width, s16 height, u8* source_buf, u8* dest_buf);
-void Do_Effet_Chaleur(s16 a1, s16 a2);
+void Do_Effet_Chaleur(s16 width, s16 height);
 
 // skops.c
 void swap(s32 a1, s32 a2);

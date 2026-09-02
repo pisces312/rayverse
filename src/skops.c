@@ -114,8 +114,7 @@ void DO_SKO_HIT(obj_t* obj, s16 sprite) {
 
 //7A338
 s16 Get_PosLave_Y(void) {
-    print_once("Not implemented: Get_PosLave_Y");
-    return 0; //stub
+    return PosLave_Y;
 }
 
 

@@ -2825,6 +2825,11 @@ extern def_sprite_t Def_Sprite[1200] INIT(= {
         REPEAT_100({0}), {0}, {0}, {0}, {0}, {0}, {0}, {0}, //1093-1199
 });
 
+extern u8 heat_wave_offsets[16] INIT(= {
+    0, 0, 0, 1, 3, 5, 7, 9, 10, 10, 10, 9, 7, 5, 3, 1
+}); //BD938
+extern u8 heat_wave_phase; //BD948
+
 extern s32 dword_BD96C; //BD96C
 
 extern big_map_t BIG_MAP; //C21D8

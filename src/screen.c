@@ -272,7 +272,58 @@ void Display_Back_Screen(s16 plan_width, s16 plan_height, s16 w1, s16 h1, s16 w2
 
 //784A8
 void Display_Sprite_On_Front(s16 plan_width, s16 plan_height, s16 w1, s16 h1, s16 w2, s16 h2) {
-    print_once("Not implemented: Display_Sprite_On_Front"); //stub
+    u8 type_scroll = Type_Scroll[10 * (num_world - 1) + Num_Fond];
+    if (type_scroll == 0 || type_scroll == 2) {
+        plan_width /= 2;
+        s32 sprite_bottom = 2 * (ymapmax - ymap) + SCREEN_HEIGHT;
+
+        for (s32 i = 0; i < NbSprite; ++i) {
+            def_sprite_t* sprite = Sprite + i;
+            bande_t* bande = Bande + sprite->bande_index;
+            if (bande->length == 0) {
+                sprite_t* scroll_diff_sprite = ScrollDiffSprites->sprites + (i + 1);
+                u8* image_data = ScrollDiffSprites->img_buffer + scroll_diff_sprite->offset_in_atlas;
+                vec2b_t size = {scroll_diff_sprite->outer_width, scroll_diff_sprite->outer_height};
+                s32 sprite_x = sprite->x - bande->field_6;
+                s32 sprite_y = sprite_bottom - scroll_diff_sprite->outer_height;
+
+                if (sprite_x > SCREEN_WIDTH) {
+                    sprite_x -= plan_width;
+                }
+                if (sprite_x + scroll_diff_sprite->outer_width > w1) {
+                    DrawSpriteDiffNormal(sprite_x, sprite_y, size, Scroll_Masque[i + 1], draw_buffer, image_data);
+                }
+
+                sprite_x += plan_width;
+                if (sprite_x < w2) {
+                    DrawSpriteDiffNormal(sprite_x, sprite_y, size, Scroll_Masque[i + 1], draw_buffer, image_data);
+                }
+            }
+        }
+    } else {
+        for (s32 i = 0; i < NbSprite; ++i) {
+            def_sprite_t* sprite = Sprite + i;
+            bande_t* bande = Bande + sprite->bande_index;
+            if (bande->length == 0) {
+                sprite_t* scroll_diff_sprite = ScrollDiffSprites->sprites + (i + 1);
+                u8* image_data = ScrollDiffSprites->img_buffer + scroll_diff_sprite->offset_in_atlas;
+                vec2b_t size = {scroll_diff_sprite->outer_width, scroll_diff_sprite->outer_height};
+                s32 sprite_y = sprite->y - bande->field_6;
+
+                if (sprite_y > SCREEN_HEIGHT) {
+                    sprite_y -= plan_height;
+                }
+                if (sprite_y + scroll_diff_sprite->outer_height > h1) {
+                    DrawSpriteDiffNormal(sprite->x, sprite_y, size, Scroll_Masque[i + 1], draw_buffer, image_data);
+                }
+
+                sprite_y += plan_height;
+                if (sprite_y < h2) {
+                    DrawSpriteDiffNormal(sprite->x, sprite_y, size, Scroll_Masque[i + 1], draw_buffer, image_data);
+                }
+            }
+        }
+    }
 }
 
 //787E8
@@ -361,11 +412,41 @@ void Calcul_Deplacement_Bande(s16 x, s16 plan_width, s16 plan_height) {
 
 //78C14
 void Init_Effet_Chaleur(s16 width, s16 height, u8* source_buf, u8* dest_buf) {
-    print_once("Not implemented: Init_Effet_Chaleur"); //stub
+    NbBande = height;
+    for (s32 i = 0; i < NbBande; ++i) {
+        bande_t* bande = Bande + i;
+        bande->length = 1;
+        bande->offset = (s16)i;
+        bande->field_4 = 0;
+        bande->field_6 = 0;
+        bande->field_8 = 2;
+        bande->field_9 = 0;
+        bande->source_buffer_pos = source_buf + i * width;
+        bande->draw_buffer_pos = dest_buf + i * SCREEN_WIDTH;
+        bande->field_14 = 0;
+    }
+    NbSprite = 0;
 }
 
 //78CA8
-void Do_Effet_Chaleur(s16 a1, s16 a2) {
-    print_once("Not implemented: Do_Effet_Chaleur"); //stub
+void Do_Effet_Chaleur(s16 width, s16 height) {
+    s16 parallax_y = MIN(ymap >> 2, height - (SCREEN_HEIGHT + 1));
+    s16 first_band = Get_PosLave_Y() - ymap + parallax_y - 20;
+
+    if (!gele) {
+        heat_wave_phase = (heat_wave_phase + 1) & 0x0F;
+    }
+
+    u8 phase = heat_wave_phase;
+    s32 falloff = 90;
+    s32 end_band = MIN((s32)height, first_band + 90);
+    for (s32 i = first_band; i < end_band; ++i) {
+        falloff = MAX(falloff - 1, 16);
+        if (i > 0) {
+            s32 offset = (heat_wave_offsets[phase] << 4) / falloff;
+            Bande[i].field_6 = (Bande[i].field_6 + width + offset) % width;
+        }
+        phase = (phase + 1) & 0x0F;
+    }
 }
 
