@@ -2829,6 +2829,8 @@ extern u8 heat_wave_offsets[16] INIT(= {
     0, 0, 0, 1, 3, 5, 7, 9, 10, 10, 10, 9, 7, 5, 3, 1
 }); //BD938
 extern u8 heat_wave_phase; //BD948
+extern s16 skops_ray_speed_x[8] INIT(= {4, 2, 0, -2, -4, 2, 0, -2}); //BD94C
+extern s16 skops_ray_speed_y[8] INIT(= {0, 2, 4, 2, 0, -2, -4, -2}); //BD95C
 
 extern s32 dword_BD96C; //BD96C
 
@@ -3252,11 +3254,11 @@ extern s16 moskitomama_droite_obj_id; //CF8D8
 extern u16 nb_fade; //CF8DA
 extern u16 sko_last_action; //CF8DC
 extern u16 sko_rayon_on; //CF8DE
-extern s16 skops_final_y; //CF8E0
-extern s16 skops_final_x; //CF8E2
-extern u16 word_CF8E4; //CF8E4
+extern s16 sko_final_x; //CF8E0
+extern s16 sko_final_y; //CF8E2
+extern s16 sko_pince_obj_id; //CF8E4
 extern s16 skops_beam_speed; //CF8E6
-extern s16 skops_beam_ds; //CF8E8
+extern s16 skops_beam_dx; //CF8E8
 extern s16 skops_beam_dy; //CF8EA
 extern u16 rubis_list_calculated; //CF8EC
 extern s16 sko_rayon_x; //CF8EE

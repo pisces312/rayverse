@@ -2414,8 +2414,9 @@ void INIT_MOTEUR(u8 new_lvl) {
     pixels_enfonce = 0;
     if (num_world == world_5_cave && num_level == 10) {
         mp.height = 32;
-        scroll_end_y = 312;
-        ymapmax = 312;
+        /* 312 on 200-line PC; the corresponding 240-line PS1 limit is 272. */
+        scroll_end_y = mp.height * 16 - SCREEN_HEIGHT;
+        ymapmax = mp.height * 16 - SCREEN_HEIGHT;
     }
     in_pause = 0;
     map_time = 0;

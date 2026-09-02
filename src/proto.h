@@ -1487,15 +1487,15 @@ void Init_Effet_Chaleur(s16 width, s16 height, u8* source_buf, u8* dest_buf);
 void Do_Effet_Chaleur(s16 width, s16 height);
 
 // skops.c
-void swap(s32 a1, s32 a2);
+void swap(s32 index_1, s32 index_2);
 void set_rubis_list(void);
-void allocate_rayon(s16 a1, s16 a2);
-void allocate_8_petits_rayons(s16 a1, s16 a2);
+void allocate_rayon(s16 x, s16 y);
+void allocate_8_petits_rayons(s16 x, s16 y);
 void do_sko_rayon(void);
 void do_sko_rayon2(void);
-void start_sko_rayon(s16 a1, s16 a2);
-void start_sko_rayon2(s16 a1, s16 a2);
-void lance_pince(s32 a1);
+void start_sko_rayon(s16 obj_x, s16 obj_y);
+void start_sko_rayon2(s16 obj_x, s16 obj_y);
+void lance_pince(obj_t* skops_obj);
 s32 sko_get_eject_sens(void);
 void DO_SOL_ENFONCE(void);
 void DO_SKO_PHASE_0(obj_t* obj);
