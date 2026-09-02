@@ -828,7 +828,7 @@ void INIT_OBJECTS(u8 a1) {
                         } else {
                             obj->init_y = ymapmax + (SCREEN_HEIGHT - 80);
                             if (num_world == world_4_image) {
-                                obj->init_y = (SCREEN_HEIGHT - 70); //TODO: fix this (doesn't seem right)
+                                obj->init_y = ymapmax + (SCREEN_HEIGHT - 70);
                             }
                             if (num_world == world_5_cave && num_level == 8) {
                                 obj->y = eau->y + eau_obj_id - obj->id; //TODO: fix this (doesn't seem right)

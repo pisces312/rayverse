@@ -1,7 +1,3 @@
-// 0CD794
-u8 collected_events_data[2592];
-u8 bonus_completed_data[24];
-
 // sub_742E0
 void set_medaillion_saved_data(void) {
 	for (s32 i = 0; i < 24; ++i) {
@@ -300,8 +296,8 @@ void load_sav(u8 which_save) {
 		mem_read(&poing, raw, 20);
 		mem_read(&status_bar, raw, 10);
 		mem_read(&ray.hit_points, raw, 1);
-		mem_read(collected_events_data, raw, 2592);
-		mem_read(bonus_completed_data, raw, 24);
+		mem_read(save_zone, raw, 2592);
+		mem_read(bonus_perfect, raw, 24);
 		u16 map_location = dans_la_map_monde ? num_world_choice : world_index;
 		// Note: Game bug: saved_map_location is only 1 byte, but we are writing/reading 2 bytes,
 		mem_read(&map_location, raw, 2);
@@ -316,8 +312,8 @@ void load_sav(u8 which_save) {
 
 
 void reset_items_and_bosses(void) {
-	memset(collected_events_data, 0, 2592);
-	memset(bonus_completed_data, 0, 24);
+	memset(save_zone, 0, 2592);
+	memset(bonus_perfect, 0, 24);
     memset(&finBosslevel, 0, sizeof(finBosslevel));
 
 	for (s32 i = 0; i < 24; ++i) {
@@ -573,8 +569,8 @@ void SaveGameOnDisk(u8 which_save) {
     mem_write(&poing, raw, 20);
     mem_write(&status_bar, raw, 10);
     mem_write(&ray.hit_points, raw, 1);
-    mem_write(collected_events_data, raw, 2592);
-    mem_write(bonus_completed_data, raw, 24);
+    mem_write(save_zone, raw, 2592);
+    mem_write(bonus_perfect, raw, 24);
     u16 map_location = dans_la_map_monde ? num_world_choice : world_index;
     // Note: Game bug: saved_map_location is only 1 byte, but we are writing/reading 2 bytes,
     mem_write(&map_location, raw, 2);

@@ -1182,7 +1182,7 @@ void start_pix_gerbe(s16 x, s16 y) {
 
     if (grb != -1) {
         cur_data = (s16 *) &pix_gerbe[grb]; /* struct access instead??? */
-        for (i = 0; i < (s16) LEN(pix_gerbe[grb].items) - grb * (s16) LEN(pix_gerbe); i++) {
+        for (i = 0; i < (s16) LEN(pix_gerbe[grb].items); i++) {
             *cur_data++ = x << 6;
             *cur_data++ = y << 6;
             spd_y = myRand((i << 2) + 128) - 256;

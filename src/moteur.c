@@ -2172,9 +2172,8 @@ void INIT_RAY(u8 new_lvl) {
             RAY_REVERSE_COMMANDS();
         }
     } else {
-        //TODO: figure out what is happening here (seems to be wrong right now)
-//        RayEvts.reverse = 1;
-//        RAY_REVERSE_COMMANDS();
+        RayEvts.reverse = 1;
+        RAY_REVERSE_COMMANDS();
     }
 
     if (level.objects && level.nb_objects > 0) {
@@ -2900,7 +2899,7 @@ void RAY_REVERSE_COMMANDS(void) {
         }
         if (star_ray_dev != NULL) {
             star_ray_dev->is_active = 0;
-            star_ray_der->flags.alive = 0;
+            star_ray_dev->flags.alive = 0;
             star_ray_dev->display_prio = 3;
         }
     }

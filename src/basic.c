@@ -838,7 +838,7 @@ void calc_btyp_square(obj_t* obj) {
 
     // center
     if (obj->main_etat == 2) {
-        obj->btypes[0] = bloc_floor(BTYP(tile_x, tile_y), x % 16, y % 16);
+        obj->btypes[0] = bloc_floor(BTYP(tile_x, tile_y), x & 0x0F, y & 0x0F);
     } else {
         obj->btypes[0] = BTYP(tile_x, tile_y);
     }
@@ -1453,7 +1453,11 @@ void Bresenham(void (*func)(s16, s16), s16 origin_x, s16 origin_y, s16 dest_x, s
         if (var_s0_1 != 0)
         {
             var_s0_2 = sp12;
+#if PS1
             temp_s6_1 = var_s0_2 + ((sp10 - var_s0_2) * (s16) temp_s6_1 / 100);
+#else
+            temp_s6_1 = var_s0_2 + (((sp10 - var_s0_2) * (s16) temp_s6_1) >> 7); // NOTE: In the PC version the scale is up to 128
+#endif
             var_s0_2++;
             var_s1_1 = sp16;
 
@@ -1482,7 +1486,11 @@ void Bresenham(void (*func)(s16, s16), s16 origin_x, s16 origin_y, s16 dest_x, s
         else
         {
             var_s0_2 = sp10;
+#if PS1
             temp_s6_1 = var_s0_2 + ((sp12 - var_s0_2) * (s16) temp_s6_1 / 100);
+#else
+            temp_s6_1 = var_s0_2 + (((sp12 - var_s0_2) * (s16) temp_s6_1) >> 7); // NOTE: In the PC version the scale is up to 128
+#endif
             var_s0_2 = var_s0_2 + 1;
             var_s1_1 = sp14;
 
@@ -1536,7 +1544,11 @@ void Bresenham(void (*func)(s16, s16), s16 origin_x, s16 origin_y, s16 dest_x, s
         if (var_s0_1 != 0)
         {
             var_s0_2 = sp16;
+#if PS1
             temp_s6_1 = var_s0_2 + ((sp14 - var_s0_2) * (s16) temp_s6_1 / 100);
+#else
+            temp_s6_1 = var_s0_2 + (((sp14 - var_s0_2) * (s16) temp_s6_1) >> 7); // NOTE: In the PC version the scale is up to 128
+#endif
             var_s0_2++;
             var_s1_1 = sp12;
             var_s7_1 = -var_s7_1;
@@ -1563,7 +1575,11 @@ void Bresenham(void (*func)(s16, s16), s16 origin_x, s16 origin_y, s16 dest_x, s
         else
         {
             var_s0_2 = sp14;
+#if PS1
             temp_s6_1 = var_s0_2 + ((sp16 - var_s0_2) * (s16) temp_s6_1 / 100);
+#else
+            temp_s6_1 = var_s0_2 + (((sp16 - var_s0_2) * (s16) temp_s6_1) >> 7); // NOTE: In the PC version the scale is up to 128
+#endif
             var_s0_2++;
             var_s1_1 = sp10;
             while (var_s0_2 <= temp_s6_1)

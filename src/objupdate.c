@@ -927,13 +927,6 @@ void TEST_SIGNPOST(void) {
         if (ray.speed_y <= -1) {
             ray.speed_y = 0;
         }
-        //NOTE: below is added in PC version
-        if (gele != 0) {
-            h_scroll_speed = 0;
-            xmap = xmap_old;
-            v_scroll_speed = 0;
-            ymap = ymap_old;
-        }
     } else if (ray.main_etat < 2 && ray.iframes_timer == -1 && gele == 0) {
         //NOTE: some differences with PS1 version
         stop_all_snd();
@@ -965,8 +958,14 @@ void TEST_SIGNPOST(void) {
             gele = 2;
         start_cd_gagne(); // play win music (nullsub on PC/Android)
     } else if (ray.main_etat == 3 && (ray.sub_etat == 23 || ray.sub_etat == 7)) { //NOTE: 53 instead of 7 in PS1 version
-        //TODO: something weird going on here with condition (fin_boss && num_world  == 6) ??
-        if (EOA(&ray))  {
+        bool should_change_level = false;
+        if (EOA(&ray) && (!fin_boss || num_world != world_6_cake)) {
+            should_change_level = true;
+        } else if (fin_boss && num_world == world_6_cake && (SelectButPressed() || (NBRE_SAVE != 0 && EOA(&ray)))) {
+            should_change_level = true;
+        }
+
+        if (should_change_level) {
             DO_FADE_OUT(); // added in PC version
             ChangeLevel();
             gele = 0;
@@ -998,6 +997,14 @@ void TEST_SIGNPOST(void) {
                 gele = 0;
             }
         }
+    }
+
+    // Added in the PC version and shared by all of the state branches above.
+    if (gele != 0) {
+        h_scroll_speed = 0;
+        xmap = xmap_old;
+        v_scroll_speed = 0;
+        ymap = ymap_old;
     }
 }
 

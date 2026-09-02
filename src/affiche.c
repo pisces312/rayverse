@@ -366,8 +366,6 @@ void DISPLAY_PTS_TO(s16 origin_x, s16 origin_y, s16 dest_x, s16 dest_y, s16 a5) 
 
 //198C4
 void DISPLAY_PTS_TO_PLAN2(s16 origin_x, s16 origin_y, s16 dest_x, s16 dest_y, s16 percent) {
-    //TODO: figure out why too many points are being drawn
-    percent = MIN(100, percent); // this fixes the too many points issue but is not present in the original code.
     Bresenham(DISPLAY_POINT, origin_x + 8, origin_y, dest_x + 8, dest_y, 7, percent);
 }
 
@@ -785,13 +783,11 @@ void display_grp_stars(void) {
 
         cen_x = x + (w >> 1);
         grapped_x = grapped->offset_bx + grapped->x;
-        Bresenham(
-                display_etoile,
-                cen_x, (s16) (y + (h >> 1) - 6),
-                grapped_x, (s16) (grapped->offset_hy + grapped->y),
-                5,
-                100 // NOTE: 128 in PC version?
-        );
+#if PS1
+        Bresenham(display_etoile, cen_x, (s16) (y + (h >> 1) - 6), grapped_x, (s16) (grapped->offset_hy + grapped->y), 5, 100);
+#else
+        Bresenham(display_etoile, cen_x, (s16) (y + (h >> 1) - 6), grapped_x, (s16) (grapped->offset_hy + grapped->y), 5, 128);
+#endif
     }
 }
 
