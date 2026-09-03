@@ -304,8 +304,9 @@ void PcMain(void) {
         set_default_Bloc_clipping();
         DO_NEW_MENUS();
 
-        if (!fin_de_rayman && !ModeDemo && Frequence == 70) {
-//			play_movie("intro.dat", 20);
+        if (!fin_de_rayman && !ModeDemo && Frequence != 70) {
+            // TODO: What to do if the correct audio file is not present?
+            playVideo(CheminSauvegarde, "intro.dat", 20);
         }
 
         while (!fin_du_jeu && status_bar.lives > -1 && new_world)  {

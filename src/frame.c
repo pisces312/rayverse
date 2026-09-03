@@ -1,37 +1,621 @@
 
-// omitted: sub_3A1C0 - sub_3B274 (I think these are related to movie playback)
+/*
+ * The PC movie files are Autodesk FLC streams with a Rayman-specific, truncated
+ * 12-byte header: size, AF12 magic, frame count, width, and height.  The normal
+ * 128-byte FLC header (including its speed field) is absent.  The original PC
+ * reader supplies a 30 ms frame delay for this variant.  intro.dat and
+ * conclu.dat use only the codecs implemented below.
+ *
+ * The original routines at 3A1C0-3B274 combine DOS file I/O, VGA/PIT control,
+ * CD control, surface primitives, and FLC decoding.  Rayverse keeps the same
+ * supplied stream and visible behavior, but deliberately uses its portable
+ * framebuffer, palette, input, and audio abstractions instead of reproducing
+ * the DOS hardware layer.
+ */
+
+enum {
+    MOVIE_FILE_HEADER_SIZE = 12,
+    MOVIE_FRAME_HEADER_SIZE = 16,
+    MOVIE_TRUNCATED_HEADER_DELAY_MS = 30,
+    MOVIE_EFFECTIVE_FRAME_DELAY_MS = MOVIE_TRUNCATED_HEADER_DELAY_MS * 2,
+    MOVIE_MAX_FRAME_SIZE = 16 * 1024 * 1024,
+
+    FLC_COLOR_256 = 4,
+    FLC_DELTA_SS2 = 7,
+    FLI_COLOR_64 = 11,
+    FLI_DELTA_LC = 12,
+    FLI_BLACK = 13,
+    FLI_BYTE_RUN = 15,
+    FLI_COPY = 16,
+    FLI_POSTAGE_STAMP = 18,
+};
+
+typedef struct movie_reader_t {
+    const u8* data;
+    size_t size;
+    size_t pos;
+} movie_reader_t;
+
+typedef struct movie_decoder_t {
+    FILE* file;
+    u16 frame_count;
+    u16 width;
+    u16 height;
+    s16 screen_x;
+    s16 screen_y;
+    u8* pixels;
+    u8* frame_data;
+    size_t frame_data_capacity;
+    u32 delay_tick_remainder;
+    rgb_palette_t palette;
+} movie_decoder_t;
+
+static u16 movie_read_le16(const u8* data) {
+    return (u16)(data[0] | ((u16)data[1] << 8));
+}
+
+static u32 movie_read_le32(const u8* data) {
+    return (u32)data[0] |
+           ((u32)data[1] << 8) |
+           ((u32)data[2] << 16) |
+           ((u32)data[3] << 24);
+}
+
+static bool movie_reader_u8(movie_reader_t* reader, u8* value) {
+    if (reader->pos >= reader->size) {
+        return false;
+    }
+    *value = reader->data[reader->pos++];
+    return true;
+}
+
+static bool movie_reader_u16(movie_reader_t* reader, u16* value) {
+    if (reader->size - reader->pos < 2) {
+        return false;
+    }
+    *value = movie_read_le16(reader->data + reader->pos);
+    reader->pos += 2;
+    return true;
+}
+
+static bool movie_reader_bytes(movie_reader_t* reader, const u8** data, size_t count) {
+    if (count > reader->size - reader->pos) {
+        return false;
+    }
+    *data = reader->data + reader->pos;
+    reader->pos += count;
+    return true;
+}
+
+static bool movie_decode_palette(movie_decoder_t* movie, const u8* data, size_t size, bool six_bit) {
+    movie_reader_t reader = {data, size, 0};
+    u16 packet_count;
+    u32 color_index = 0;
+    if (!movie_reader_u16(&reader, &packet_count)) {
+        return false;
+    }
+
+    for (u32 packet = 0; packet < packet_count; ++packet) {
+        u8 skip;
+        u8 encoded_count;
+        if (!movie_reader_u8(&reader, &skip) || !movie_reader_u8(&reader, &encoded_count)) {
+            return false;
+        }
+
+        color_index += skip;
+        u32 color_count = encoded_count ? encoded_count : 256;
+        if (color_index + color_count > 256 || color_count * 3 > reader.size - reader.pos) {
+            return false;
+        }
+
+        for (u32 i = 0; i < color_count; ++i) {
+            u8 r;
+            u8 g;
+            u8 b;
+            movie_reader_u8(&reader, &r);
+            movie_reader_u8(&reader, &g);
+            movie_reader_u8(&reader, &b);
+
+            /* PC VGA palettes are 6-bit, whereas Rayverse's renderer stores
+               8-bit components.  FLC type 4 is already 8-bit; FLI type 11 is
+               the older 6-bit representation. */
+            if (six_bit) {
+                r = (u8)MIN((u32)r << 2, 255u);
+                g = (u8)MIN((u32)g << 2, 255u);
+                b = (u8)MIN((u32)b << 2, 255u);
+            }
+            rgb_t* color = &movie->palette.colors[color_index++];
+            color->r = r;
+            color->g = g;
+            color->b = b;
+        }
+    }
+    return true;
+}
+
+static bool movie_decode_byte_run(movie_decoder_t* movie, const u8* data, size_t size) {
+    movie_reader_t reader = {data, size, 0};
+    for (u32 y = 0; y < movie->height; ++y) {
+        u8 ignored_packet_count;
+        if (!movie_reader_u8(&reader, &ignored_packet_count)) {
+            return false;
+        }
+
+        u32 x = 0;
+        while (x < movie->width) {
+            u8 encoded_count;
+            if (!movie_reader_u8(&reader, &encoded_count)) {
+                return false;
+            }
+            s32 count = (s8)encoded_count;
+            if (count == 0) {
+                return false;
+            }
+
+            if (count > 0) {
+                u8 value;
+                if (!movie_reader_u8(&reader, &value) || x + (u32)count > movie->width) {
+                    return false;
+                }
+                memset(movie->pixels + y * movie->width + x, value, (size_t)count);
+                x += (u32)count;
+            } else {
+                size_t literal_count = (size_t)(-count);
+                const u8* literal;
+                if (x + literal_count > movie->width ||
+                    !movie_reader_bytes(&reader, &literal, literal_count)) {
+                    return false;
+                }
+                memcpy(movie->pixels + y * movie->width + x, literal, literal_count);
+                x += (u32)literal_count;
+            }
+        }
+    }
+    return true;
+}
+
+static bool movie_decode_line_compressed(movie_decoder_t* movie, const u8* data, size_t size) {
+    movie_reader_t reader = {data, size, 0};
+    u16 skipped_lines;
+    u16 line_count;
+    if (!movie_reader_u16(&reader, &skipped_lines) || !movie_reader_u16(&reader, &line_count)) {
+        return false;
+    }
+
+    u32 y = skipped_lines;
+    for (u32 line = 0; line < line_count; ++line, ++y) {
+        u8 packet_count;
+        if (y >= movie->height || !movie_reader_u8(&reader, &packet_count)) {
+            return false;
+        }
+
+        u32 x = 0;
+        for (u32 packet = 0; packet < packet_count; ++packet) {
+            u8 skip;
+            u8 encoded_count;
+            if (!movie_reader_u8(&reader, &skip) || !movie_reader_u8(&reader, &encoded_count)) {
+                return false;
+            }
+            x += skip;
+            if (x > movie->width) {
+                return false;
+            }
+
+            s32 count = (s8)encoded_count;
+            if (count >= 0) {
+                size_t literal_count = (size_t)count;
+                const u8* literal;
+                if (x + literal_count > movie->width ||
+                    !movie_reader_bytes(&reader, &literal, literal_count)) {
+                    return false;
+                }
+                memcpy(movie->pixels + y * movie->width + x, literal, literal_count);
+                x += (u32)literal_count;
+            } else {
+                size_t repeat_count = (size_t)(-count);
+                u8 value;
+                if (x + repeat_count > movie->width || !movie_reader_u8(&reader, &value)) {
+                    return false;
+                }
+                memset(movie->pixels + y * movie->width + x, value, repeat_count);
+                x += (u32)repeat_count;
+            }
+        }
+    }
+    return true;
+}
+
+static bool movie_decode_delta_ss2(movie_decoder_t* movie, const u8* data, size_t size) {
+    movie_reader_t reader = {data, size, 0};
+    u16 lines_left;
+    if (!movie_reader_u16(&reader, &lines_left)) {
+        return false;
+    }
+
+    u32 y = 0;
+    while (lines_left > 0) {
+        u16 opcode;
+        if (!movie_reader_u16(&reader, &opcode)) {
+            return false;
+        }
+
+        if (opcode & 0x8000) {
+            if ((opcode & 0xC000) == 0xC000) {
+                s32 skipped_lines = -(s16)opcode;
+                if (skipped_lines <= 0 || y + (u32)skipped_lines > movie->height) {
+                    return false;
+                }
+                y += (u32)skipped_lines;
+                continue;
+            }
+
+            /* 10xxxxxx xxxxxxxx sets the final pixel of the current line. */
+            if (y >= movie->height || movie->width == 0) {
+                return false;
+            }
+            movie->pixels[y * movie->width + movie->width - 1] = (u8)opcode;
+            continue;
+        }
+
+        if (y >= movie->height) {
+            return false;
+        }
+        u32 x = 0;
+        u32 packet_count = opcode;
+        for (u32 packet = 0; packet < packet_count; ++packet) {
+            u8 skip;
+            u8 encoded_word_count;
+            if (!movie_reader_u8(&reader, &skip) ||
+                !movie_reader_u8(&reader, &encoded_word_count)) {
+                return false;
+            }
+            x += skip;
+            if (x > movie->width) {
+                return false;
+            }
+
+            s32 word_count = (s8)encoded_word_count;
+            if (word_count >= 0) {
+                size_t literal_count = (size_t)word_count * 2;
+                const u8* literal;
+                if (x + literal_count > movie->width ||
+                    !movie_reader_bytes(&reader, &literal, literal_count)) {
+                    return false;
+                }
+                memcpy(movie->pixels + y * movie->width + x, literal, literal_count);
+                x += (u32)literal_count;
+            } else {
+                size_t repeat_count = (size_t)(-word_count);
+                const u8* pair;
+                if (x + repeat_count * 2 > movie->width ||
+                    !movie_reader_bytes(&reader, &pair, 2)) {
+                    return false;
+                }
+                for (size_t i = 0; i < repeat_count; ++i) {
+                    movie->pixels[y * movie->width + x++] = pair[0];
+                    movie->pixels[y * movie->width + x++] = pair[1];
+                }
+            }
+        }
+        ++y;
+        --lines_left;
+    }
+    return true;
+}
+
+static bool movie_decode_frame_chunks(movie_decoder_t* movie, const u8* data, size_t size, u16 chunk_count) {
+    size_t offset = 0;
+    for (u32 chunk_index = 0; chunk_index < chunk_count; ++chunk_index) {
+        if (size - offset < 6) {
+            return false;
+        }
+
+        u32 chunk_size = movie_read_le32(data + offset);
+        u16 chunk_type = movie_read_le16(data + offset + 4);
+        if (chunk_size < 6 || chunk_size > size - offset) {
+            return false;
+        }
+
+        const u8* chunk_data = data + offset + 6;
+        size_t chunk_data_size = chunk_size - 6;
+        bool decoded = true;
+        switch (chunk_type) {
+            case FLC_COLOR_256:
+                decoded = movie_decode_palette(movie, chunk_data, chunk_data_size, false);
+                break;
+            case FLI_COLOR_64:
+                decoded = movie_decode_palette(movie, chunk_data, chunk_data_size, true);
+                break;
+            case FLC_DELTA_SS2:
+                decoded = movie_decode_delta_ss2(movie, chunk_data, chunk_data_size);
+                break;
+            case FLI_DELTA_LC:
+                decoded = movie_decode_line_compressed(movie, chunk_data, chunk_data_size);
+                break;
+            case FLI_BLACK:
+                memset(movie->pixels, 0, (size_t)movie->width * movie->height);
+                break;
+            case FLI_BYTE_RUN:
+                decoded = movie_decode_byte_run(movie, chunk_data, chunk_data_size);
+                break;
+            case FLI_COPY: {
+                size_t pixel_count = (size_t)movie->width * movie->height;
+                /* Rayman's type-16 chunks declare a size two bytes shorter
+                   than their pixel data: the final word is stored as trailing
+                   data in the enclosing frame.  MovieDecodeCopyChunk copies
+                   width*height unconditionally in the PC executable, so
+                   accept this precise final-chunk quirk while retaining the
+                   enclosing-frame bounds check. */
+                bool has_trailing_word =
+                    chunk_index + 1 == chunk_count &&
+                    chunk_data_size + 2 == pixel_count &&
+                    size - (offset + 6) >= pixel_count;
+                if (chunk_data_size < pixel_count && !has_trailing_word) {
+                    decoded = false;
+                } else {
+                    memcpy(movie->pixels, chunk_data, pixel_count);
+                }
+            } break;
+            case FLI_POSTAGE_STAMP:
+                /* A decoder thumbnail, not part of the displayed frame. */
+                break;
+            default:
+                /* The PC switch also ignores unknown ancillary chunks. */
+                break;
+        }
+        if (!decoded) {
+            return false;
+        }
+        offset += chunk_size;
+    }
+    return true;
+}
+
+static s32 movie_read_frame(movie_decoder_t* movie) {
+    u8 header[MOVIE_FRAME_HEADER_SIZE];
+    if (fread(header, 1, sizeof(header), movie->file) != sizeof(header)) {
+        return -6;
+    }
+
+    u32 frame_size = movie_read_le32(header);
+    u16 frame_magic = movie_read_le16(header + 4);
+    u16 chunk_count = movie_read_le16(header + 6);
+    if (frame_magic != 0xF1FA || frame_size < MOVIE_FRAME_HEADER_SIZE ||
+        frame_size > MOVIE_MAX_FRAME_SIZE) {
+        return -4;
+    }
+
+    size_t data_size = frame_size - MOVIE_FRAME_HEADER_SIZE;
+    if (data_size > movie->frame_data_capacity) {
+        u8* resized = (u8*)realloc(movie->frame_data, data_size);
+        if (!resized && data_size != 0) {
+            return -2;
+        }
+        movie->frame_data = resized;
+        movie->frame_data_capacity = data_size;
+    }
+    if (data_size != 0 && fread(movie->frame_data, 1, data_size, movie->file) != data_size) {
+        return -6;
+    }
+    return movie_decode_frame_chunks(movie, movie->frame_data, data_size, chunk_count) ? 0 : -4;
+}
+
+static bool movie_skip_requested(void) {
+    readinput();
+    return but0pressed() || but1pressed() || but2pressed() || but3pressed() || TOUCHE(SC_SPACE);
+}
+
+static bool movie_present_frame(movie_decoder_t* movie) {
+    for (u32 y = 0; y < movie->height; ++y) {
+        memcpy(DrawBufferNormal + (movie->screen_y + y) * SCREEN_WIDTH + movie->screen_x,
+               movie->pixels + y * movie->width, movie->width);
+    }
+    SetPalette(&movie->palette, 0, 256);
+
+    /* The shortened header is assigned 30 ms, but that is not the encoded
+       frame period seen by the PC player: one timing path waits about 60 ms
+       per frame, while the Windows fallback consumes two frames per roughly
+       125 ms display interval.  Both advance the stream at about 16 fps.
+
+       Keep the game's global 60 Hz rate intact and distribute the 60 ms delay
+       over whole presentation ticks.  At 60 Hz this repeats 3/4/3/4/4 ticks,
+       averaging exactly 60 ms instead of the previous, much too fast 33 ms. */
+    s64 configured_hz = global_app_state.target_game_hz;
+    u32 target_hz = configured_hz > 0 && configured_hz <= 1000 ? (u32)configured_hz : 60;
+    movie->delay_tick_remainder += MOVIE_EFFECTIVE_FRAME_DELAY_MS * target_hz;
+    u32 ticks = movie->delay_tick_remainder / 1000;
+    movie->delay_tick_remainder %= 1000;
+    if (ticks == 0) {
+        ticks = 1;
+    }
+    for (u32 tick = 0; tick < ticks; ++tick) {
+        advance_frame();
+        if (movie_skip_requested()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static s32 movie_decode_and_present_frame(movie_decoder_t* movie, bool* skipped) {
+    s32 result = movie_read_frame(movie);
+    if (result < 0) {
+        return result;
+    }
+    *skipped = movie_present_frame(movie);
+    return 0;
+}
+
+static s32 movie_play_once(movie_decoder_t* movie) {
+    for (u32 frame = 0; frame < movie->frame_count; ++frame) {
+        if (movie_skip_requested()) {
+            return 0;
+        }
+        bool skipped = false;
+        s32 result = movie_decode_and_present_frame(movie, &skipped);
+        if (result < 0 || skipped) {
+            return result;
+        }
+    }
+    return 0;
+}
+
+static s32 movie_play_loop(movie_decoder_t* movie) {
+    bool skipped = false;
+    s32 result = movie_decode_and_present_frame(movie, &skipped);
+    if (result < 0 || skipped) {
+        return result;
+    }
+
+    /* A looping FLC has an uncounted ring frame after its declared frames.
+       The PC loop decodes the first frame once, then repeatedly decodes the
+       remaining declared frames plus that ring frame. */
+    long loop_offset = ftell(movie->file);
+    if (loop_offset < 0) {
+        return -6;
+    }
+    for (;;) {
+        if (fseek(movie->file, loop_offset, SEEK_SET) != 0) {
+            return -6;
+        }
+        for (u32 frame = 0; frame < movie->frame_count; ++frame) {
+            if (movie_skip_requested()) {
+                return 0;
+            }
+            result = movie_decode_and_present_frame(movie, &skipped);
+            if (result < 0 || skipped) {
+                return result;
+            }
+        }
+    }
+}
+
+static FILE* movie_open_file(const char* path, const char* filename) {
+    /* The DOS executable conditionally concatenates its installation path.
+       Try that spelling first, then use Rayverse's normal data/ lookup. */
+    if (path && path[0]) {
+        char full_path[512];
+        s32 length = snprintf(full_path, sizeof(full_path), "%s%s", path, filename);
+        if (length > 0 && length < (s32)sizeof(full_path)) {
+            FILE* file = fopen(full_path, "rb");
+            if (file) {
+                return file;
+            }
+        }
+    }
+    return open_data_file(filename, false);
+}
+
+static s32 movie_open_decoder(movie_decoder_t* movie, FILE* file) {
+    u8 header[MOVIE_FILE_HEADER_SIZE];
+    memset(movie, 0, sizeof(*movie));
+    movie->file = file;
+    if (fread(header, 1, sizeof(header), file) != sizeof(header)) {
+        return -6;
+    }
+
+    u32 header_size = movie_read_le32(header);
+    u16 magic = movie_read_le16(header + 4);
+    movie->frame_count = movie_read_le16(header + 6);
+    movie->width = movie_read_le16(header + 8);
+    movie->height = movie_read_le16(header + 10);
+    if (magic != 0xAF12 || header_size != MOVIE_FILE_HEADER_SIZE || movie->frame_count == 0) {
+        return -11;
+    }
+    if (movie->width == 0 || movie->height == 0 ||
+        movie->width > SCREEN_WIDTH || movie->height > SCREEN_HEIGHT) {
+        return -3;
+    }
+
+    movie->screen_x = (s16)((SCREEN_WIDTH - movie->width) / 2);
+    movie->screen_y = (s16)((SCREEN_HEIGHT - movie->height) / 2);
+    movie->pixels = (u8*)calloc((size_t)movie->width, movie->height);
+    return movie->pixels ? 0 : -2;
+}
+
+static void movie_close_decoder(movie_decoder_t* movie) {
+    free(movie->frame_data);
+    free(movie->pixels);
+    movie->frame_data = NULL;
+    movie->pixels = NULL;
+}
 
 //3B288
-void display_movie_frames(void) {
-    print_once("Not implemented: display_movie_frames"); //stub
+void MovieFadeOutPalette(void) {
+    if (!global_game) {
+        return;
+    }
+
+    rgb_palette_t faded_palette = global_game->draw_palette;
+    for (u32 step = 0; step < 32; ++step) {
+        /* The VGA routine subtracts two from each 6-bit component.  Rayverse
+           uses 8-bit palettes, so the corresponding step is eight.  Color
+           zero is intentionally preserved, matching the PC's 1..255 upload. */
+        for (u32 color = 1; color < 256; ++color) {
+            rgb_t* rgb = &faded_palette.colors[color];
+            rgb->r = rgb->r > 8 ? (u8)(rgb->r - 8) : 0;
+            rgb->g = rgb->g > 8 ? (u8)(rgb->g - 8) : 0;
+            rgb->b = rgb->b > 8 ? (u8)(rgb->b - 8) : 0;
+        }
+        SetPalette(&faded_palette, 1, 255);
+        advance_frame();
+    }
 }
 
 //3B314
-s32 playVideo2(const char* path, const char* filename, s32 a3, u8 a4) {
-    print_once("Not implemented: playVideo2");
-    playing_intro_video = strcasecmp("intro.dat", filename) == 0;
-    if (byte_CFA2A) {
-        // stub
-    }
-    FILE* fp = open_data_file(filename, false);
-    if (!fp) {
+s32 MoviePlayInternal(const char* path, const char* filename, s32 cd_track, u8 loop) {
+    if (!filename) {
         return -5;
     }
-    if (MusicCdActive) {
+    playing_intro_video = strcasecmp("intro.dat", filename) == 0;
 
+    FILE* file = movie_open_file(path, filename);
+    if (!file) {
+        return -5;
     }
-    fclose(fp);
-    return 0; // stub
+
+    bool music_enabled = MusicCdActive != 0;
+    if (music_enabled) {
+        stop_cd();
+    }
+
+    movie_decoder_t movie;
+    s32 result = movie_open_decoder(&movie, file);
+    if (result < 0) {
+        fclose(file);
+        return result;
+    }
+
+    u8* saved_draw_buffer = draw_buffer;
+    draw_buffer = DrawBufferNormal;
+    memset(DrawBufferNormal, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
+    memset(&movie.palette, 0, sizeof(movie.palette));
+    SetPalette(&movie.palette, 0, 256);
+
+    if (music_enabled && cd_track > 0) {
+        play_cd_track(cd_track, false);
+    }
+
+    result = loop ? movie_play_loop(&movie) : movie_play_once(&movie);
+    MovieFadeOutPalette();
+
+    if (music_enabled) {
+        stop_cd();
+    }
+    draw_buffer = saved_draw_buffer;
+    movie_close_decoder(&movie);
+    fclose(file);
+    return result;
 }
 
 //3B4A8
 s32 playVideo(const char* path, const char* filename, s32 a2) {
-    return playVideo2(path, filename, a2, 0);
+    return MoviePlayInternal(path, filename, a2, 0);
 }
 
 //3B4B8
-s32 playVideo_alt(const char* path, const char* filename, s32 a2) {
-    return playVideo2(path, filename, a2, 1);
+s32 playVideoLoop(const char* path, const char* filename, s32 a2) {
+    return MoviePlayInternal(path, filename, a2, 1);
 }
 
 //3B4D0

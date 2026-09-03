@@ -14,7 +14,13 @@ u8 snd_sqrt_table[128] = {
 
 ogg_t open_cd_vorbis(s32 track_number, bool looping) {
 	ogg_t result = {0};
-	if (track_number >= 2 && track_number <= 20) {
+	/* The conclusion movie requests physical CD track 21.  Not every digital
+	   release includes rayman21.ogg, but do not reject it before lookup when a
+	   complete disc extraction does provide that track. */
+    // TODO: What to do if the correct audio file is not present?
+    // The GOG release (as well as original PC Rayman 1.21) do not contain the CD tracks
+    // for the intro/outro movies.
+	if (track_number >= 2 && track_number <= 21) {
 		char filename[512];
 		snprintf(filename, sizeof(filename), "Music/rayman%02d.ogg", track_number);
 		mem_t* mem = read_entire_file(filename, false);

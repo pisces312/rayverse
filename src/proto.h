@@ -685,10 +685,10 @@ void DO_FEE(obj_t* obj);
 void DoFeeRaymanZDD(obj_t* obj);
 
 // frame.c
-void display_movie_frames(void);
-s32 playVideo2(const char* path, const char* filename, s32 a3, u8 a4);
+void MovieFadeOutPalette(void);
+s32 MoviePlayInternal(const char* path, const char* filename, s32 cd_track, u8 loop);
 s32 playVideo(const char* path, const char* filename, s32 a3);
-s32 playVideo_alt(const char* path, const char* filename, s32 a3);
+s32 playVideoLoop(const char* path, const char* filename, s32 a3);
 void SWAP_BUFFERS(void);
 void sub_3B580(void);
 void sub_3B5E8(void);
