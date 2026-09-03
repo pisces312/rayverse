@@ -709,8 +709,92 @@ void display_deform_text(const char* text, s16 x, s16 y, u8 font_size, s8 color,
 }
 
 //1A8DC
-void display_text_sin(const char* text, s16 x, s16 y, u8 font_size, s8 color, u8 a6) {
-    //stub
+void display_text_sin(const char* text, s16 x, s16 y, s16 phase, u8 font_size, u8 color) {
+    s16 line_height;
+    s16 char_spacing;
+    s16 space_width;
+
+    if (font_size == 2) {
+        line_height = 15;
+        char_spacing = 1;
+        space_width = 8;
+    } else if (font_size == 1) {
+        line_height = 23;
+        char_spacing = 3;
+        space_width = 10;
+    } else {
+        line_height = 36;
+        char_spacing = 3;
+        space_width = 12;
+    }
+
+    if (text == NULL) {
+        return;
+    }
+
+    s32 current_x = x;
+    s32 current_y = y;
+
+    /* Android falls back to display_text() for its later extended-language
+       fonts. The PC routine always uses the original alpha/alpha2 atlases. */
+    for (s16 char_index = 0; text[char_index] != '\0'; ++char_index) {
+        const char* pos = text + char_index;
+        const u8 c = (u8)*pos;
+        s32 num_let = 0;
+
+        if (c == '/') {
+            current_x = x - calc_largmax_text(text, char_index, space_width, char_spacing, font_size) / 2;
+            if (char_index > 1) {
+                current_y += line_height;
+            }
+        } else if (c == ' ') {
+            current_x += space_width;
+        } else {
+            num_let = deter_num_let(c, pos + 1);
+        }
+
+        if (num_let != 0) {
+            const s32 let_width = calc_let_Width(font_size, num_let);
+            const s16 wave_y = ashr16((s16)cosinus((s32)phase + char_index * 32), 5);
+            sprite_t* sprite = NULL;
+            obj_t* font = NULL;
+
+            if (num_let >= 1000) {
+                const s32 sprite_index = num_let - 1000;
+                if (sprite_index >= 0 && sprite_index < alpha_numbers->nb_sprites) {
+                    font = alpha_numbers;
+                    sprite = font->sprites + sprite_index;
+                }
+                char_index += 3;
+            } else {
+                u8 sprite_index = (u8)num_let;
+                calc_num_let_spr(font_size, &sprite_index);
+
+                if (font_size <= 1) {
+                    if (sprite_index < alpha2_sprite_count) {
+                        font = alpha2;
+                        sprite = font->sprites + sprite_index;
+                    }
+                } else if (font_size == 2 && sprite_index < alpha_sprite_count) {
+                    font = alpha;
+                    sprite = font->sprites + sprite_index;
+                }
+            }
+
+            if (sprite != NULL) {
+                vec2b_t size = {(u8)let_width, sprite->outer_height};
+                DrawSpriteColorNormalEtX(
+                    current_x,
+                    color,
+                    current_y + wave_y - sprite->outer_height,
+                    size,
+                    draw_buffer,
+                    font->img_buffer + sprite->offset_in_atlas
+                );
+                current_x += (sprite->sprite_pos & 0xF) + sprite->inner_width - char_spacing;
+            }
+        }
+    }
 }
 
 //1ABE0

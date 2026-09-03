@@ -1111,7 +1111,7 @@ void del_actobj(obj_t* obj) {
 s32 calc_let_Width(u8 font_size, s32 num_let) {
     obj_t* obj = NULL;
     sprite_t* sprite;
-    if (num_let > 1000) {
+    if (num_let >= 1000) {
         sprite = alpha_numbers->sprites + (num_let - 1000);
     } else {
         switch (font_size) {
@@ -1140,7 +1140,7 @@ s32 calc_let_Width(u8 font_size, s32 num_let) {
 s32 calc_let_Width2(u8 font_size, s32 num_let) {
     obj_t* obj = NULL;
     sprite_t* sprite;
-    if (num_let > 1000) {
+    if (num_let >= 1000) {
         sprite = alpha_numbers->sprites + (num_let - 1000);
     } else {
         if (font_size <= 1) {
@@ -1220,8 +1220,10 @@ s32 deter_num_let(u8 c, const char* next_chars) {
 }
 
 //1F194
-void calc_num_let_spr(u8 a1, u8* a2) {
-    print_once("Not implemented: calc_num_let_spr"); //stub
+void calc_num_let_spr(u8 font_size, u8* sprite_index) {
+    if (font_size == 1) {
+        *sprite_index += 41;
+    }
 }
 
 //1F1B0
