@@ -462,13 +462,36 @@ void DISPLAY_GAME_VIGNET(void) {
 
 //355BC
 void DISPLAY_TXT_CREDITS(void) {
-    print_once("Not implemented: DISPLAY_TXT_CREDITS"); //stub
+    for (s32 i = first_credit; i <= last_credit && i < COUNT(credits_in); ++i) {
+        credit_t* credit = &credits[i];
+        display_text(
+            credit->text,
+            credit->x_pos,
+            credit->y_pos,
+            credit->font_size,
+            credit->color
+        );
+    }
 }
 
 //3561C
-s16 display_credits_prg(u32 a1) {
-    print_once("Not implemented: display_credits_prg");
-    return 0; //stub
+s16 display_credits_prg(u32 time) {
+    (void)time;
+
+    readinput();
+    DoCdCredits();
+    DO_CREDITS();
+    DISPLAY_FOND3();
+    DISPLAY_TXT_CREDITS();
+
+    const u8 previous_exit = PROC_EXIT;
+    PROC_EXIT = false;
+    if (ValidButPressed() || SelectButPressed()) {
+        PROC_EXIT = true;
+        display_Vignet = 7;
+    }
+
+    return PROC_EXIT || previous_exit;
 }
 
 //35680
@@ -478,17 +501,67 @@ void display_anim_victoire(void) {
 
 //356B8
 void DISPLAY_CREDITS(void) {
-    print_once("Not implemented: DISPLAY_CREDITS"); //stub
+    stop_cd();
+    INIT_CREDITS();
+
+    while (display_Vignet <= 7) {
+        SAVE_PALETTE(&rvb_Vig[display_Vignet]);
+        SAVE_PLAN3();
+        INIT_FADE_IN();
+        SYNCHRO_LOOP(display_credits_prg);
+        DO_FADE_OUT();
+        PROC_EXIT = false;
+        ++display_Vignet;
+        RESTORE_PALETTE();
+        RESTORE_PLAN3();
+    }
+
+    stop_cd();
+    INIT_FADE_IN();
 }
 
 //3572C
 void DISPLAY_CREDITS_MENU(void) {
-    print_once("Not implemented: DISPLAY_CREDITS_MENU"); //stub
+    stop_cd();
+    SAVE_PALETTE(&rvb_plan3);
+
+    MenuCredits = true;
+    INIT_CREDITS();
+    MenuCredits = false;
+
+    /* The PC menu keeps its single menu background for all eight groups;
+       only the post-victory path swaps the dedicated credits vignettes. */
+    while (display_Vignet <= 7) {
+        SYNCHRO_LOOP(display_credits_prg);
+        PROC_EXIT = false;
+        ++display_Vignet;
+    }
+
+    DO_FADE_OUT();
+    RESTORE_PALETTE();
+    stop_cd();
+    INIT_FADE_IN();
 }
 
 //357E4
 void DISPLAY_PROTOON_BACK(void) {
-    print_once("Not implemented: DISPLAY_PROTOON_BACK"); //stub
+    display_Vignet = 0;
+    SAVE_PALETTE(&rvb_Vig[0]);
+    SAVE_PLAN3();
+    INIT_FADE_IN();
+
+    loop_nb_trames = 0;
+    loop_timing = 4;
+    new_txt_fee = 0;
+    INIT_TEXT_TO_DISPLAY();
+    SYNCHRO_LOOP(display_vignet_prg);
+
+    /* PC loads four pages into each arena while the returned-Protoon image
+       is still on screen. PS1 loads one page at a time instead. */
+    LOAD_CREDITS_VIGNET(main_mem_world, main_mem_level);
+    DO_FADE_OUT();
+    RESTORE_PALETTE();
+    RESTORE_PLAN3();
 }
 
 //35850
@@ -498,7 +571,26 @@ void DO_ANIM_VICTOIRE(void) {
 
 //35878
 void DO_VICTOIRE(void) {
-    print_once("Not implemented: DO_VICTOIRE"); //stub
+    star_ray_der = NULL;
+    star_ray_dev = NULL;
+
+    if (You_Win) {
+        /* The original PC executable suppresses videos in 70 Hz mode. The
+           decoder is shared with the intro and remains a separate batch. */
+        if (num_level_choice > 1 && Frequence != 70) {
+            playVideo(CheminSauvegarde, "conclu.dat", 21);
+        }
+
+        num_level = 4;
+        num_world = world_6_cake;
+        block_free(main_mem_level);
+        block_free(main_mem_world);
+        LOAD_VIGNET_GAME(main_mem_level);
+        DISPLAY_PROTOON_BACK();
+        DISPLAY_CREDITS();
+    }
+
+    PROC_EXIT = false;
 }
 
 //35908
@@ -781,8 +873,15 @@ void LOAD_VIGNET_GAME(mem_t* mem) {
 }
 
 //3681C
-void LOAD_CREDITS_VIGNET(s32 a1, s32 a2, s16 a3) {
-    print_once("Not implemented: LOAD_CREDITS_VIGNET"); //stub
+void LOAD_CREDITS_VIGNET(mem_t* first_mem, mem_t* second_mem) {
+    static const s32 credits_vignet_ids[8] = {52, 58, 55, 53, 56, 54, 59, 57};
+
+    for (s16 i = 0; i < 4; ++i) {
+        SwapPlan2PlanVignInVignet(first_mem, credits_vignet_ids[i], i);
+    }
+    for (s16 i = 4; i < COUNT(credits_vignet_ids); ++i) {
+        SwapPlan2PlanVignInVignet(second_mem, credits_vignet_ids[i], i);
+    }
 }
 
 //36880

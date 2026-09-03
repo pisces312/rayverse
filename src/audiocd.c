@@ -6,12 +6,23 @@ void SetCompteurTrameAudio(void) {
 
 //1CEEC
 void DoCdCredits(void) {
-    //stub
+    if (CompteurTrameAudio > 180) {
+        CompteurTrameAudio = 0;
+    }
+    if (MusicCdActive && CompteurTrameAudio == 0 && !cd_playing()) {
+        start_cd_credits();
+    }
+    ++CompteurTrameAudio;
 }
 
 //1CF2C
 void start_cd_credits(void) {
-    //stub
+    if (JeuCracker) {
+        MusicCdActive = false;
+    }
+    if (MusicCdActive) {
+        play_cd_track(18, false); // Credits music - "Party at Joe's"
+    }
 }
 
 //1CF54

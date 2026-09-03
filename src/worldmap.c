@@ -951,12 +951,81 @@ void INIT_VIGNET(void) {
 
 //6AF40
 void INIT_CREDITS(void) {
-    print_once("Not implemented: INIT_CREDITS"); //stub
+    dans_la_map_monde = false;
+    if (!MenuCredits) {
+        SaveGameOnDisk(fichier_selectionne);
+    }
+
+    first_credit = 0;
+    last_credit = 0;
+    nb_credits_lines = 0;
+    PROC_EXIT = false;
+    display_Vignet = 0;
+    menuEtape = 0;
+
+    for (s32 i = 0; i < COUNT(credits_in); ++i) {
+        credits[i] = credits_in[i];
+        if (credits[i].y_pos != 0) {
+            credits[i].text = language_txt[credits[i].y_pos];
+        }
+
+        /* Both ports begin 20 lines below their viewport: y=220 on PC and
+           y=260 on PS1. Expressing that distinction avoids a port literal. */
+        credits[i].y_pos = SCREEN_HEIGHT + 20;
+    }
 }
 
 //6B000
 void DO_CREDITS(void) {
-    print_once("Not implemented: DO_CREDITS"); //stub
+    if (!You_Win) {
+        return;
+    }
+
+    horloges(1);
+    if (horloge[2] != 0) {
+        return;
+    }
+
+    for (s32 i = first_credit; i <= last_credit; ++i) {
+        --credits[i].y_pos;
+    }
+    ++nb_credits_lines;
+
+    const credit_t* last = &credits[last_credit];
+    s16 line_delay;
+    if (last->command == 0) {
+        if (last->font_size == 0) {
+            line_delay = 36;
+        } else if (last->font_size == 1) {
+            line_delay = 23;
+        } else {
+            line_delay = 15;
+        }
+    } else if (last->command == 255) {
+        line_delay = 160;
+    } else if (last->command > 100) {
+        line_delay = last->command - 85;
+    } else {
+        line_delay = last->command * 15;
+    }
+
+    if (nb_credits_lines >= line_delay) {
+        nb_credits_lines = 0;
+        if (last->command == 255) {
+            PROC_EXIT = true;
+        } else {
+            ++last_credit;
+            /* PC's 200-line display uses 15 records per background. PS1's
+               240-line credits use 19 records per background instead. */
+            if (last_credit % 15 == 0) {
+                PROC_EXIT = true;
+            }
+        }
+    }
+
+    if (credits[first_credit].y_pos < -4) {
+        ++first_credit;
+    }
 }
 
 //6B138

@@ -583,6 +583,15 @@ typedef struct display_item_t {
     s8 color;
 } display_item_t;
 
+typedef struct credit_t {
+    const char* text;
+    s16 x_pos;
+    s16 y_pos;
+    u8 font_size;
+    u8 command;
+    s8 color;
+} credit_t;
+
 
 typedef struct obj_procs_t {
     void (*command)(obj_t* obj);

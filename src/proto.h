@@ -595,7 +595,7 @@ void LOAD_CONTINUE_SCREEN(mem_t* mem);
 void DISPLAY_FOND_CONTINUE(void);
 void SwapPlan2PlanVignInVignet(mem_t* mem, s32 resource_id, s16 vig_index);
 void LOAD_VIGNET_GAME(mem_t* mem);
-void LOAD_CREDITS_VIGNET(s32 a1, s32 a2, s16 a3);
+void LOAD_CREDITS_VIGNET(mem_t* first_mem, mem_t* second_mem);
 void DEPART_WORLD(void);
 void DEPART_LEVEL(void);
 void REMOVE_FICHIER(void);

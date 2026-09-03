@@ -1811,6 +1811,135 @@ extern s32 timeCd[132] INIT(= {
 
 extern u8 let_shadow INIT(= 0); //951D0
 
+#define CREDIT_LANG(text_id, font, command, color) \
+    {NULL, SCREEN_WIDTH / 2, text_id, font, command, color}
+#define CREDIT_TEXT(text, font, command, color) \
+    {text, SCREEN_WIDTH / 2, 0, font, command, color}
+
+/* The PC credits contain 115 active records followed by 20 unused slots.
+   A non-zero input y position is a language_txt index; INIT_CREDITS replaces
+   it with the platform-specific starting y position. */
+extern const credit_t credits_in[115] INIT(= {
+    CREDIT_LANG(110, 1,   4, 2),
+    CREDIT_LANG(112, 2, 102, 1),
+    CREDIT_TEXT("/michel ancel/", 2, 0, 1),
+    CREDIT_TEXT("/frederic houde/", 2, 3, 1),
+    CREDIT_LANG(113, 2, 102, 2),
+    CREDIT_TEXT("/alexandra steible/", 2, 3, 2),
+    CREDIT_LANG(115, 2, 102, 5),
+    CREDIT_TEXT("/michel ancel/", 2, 0, 5),
+    CREDIT_TEXT("/serge hascoet/", 2, 0, 5),
+    CREDIT_LANG(111, 2, 0, 5),
+    CREDIT_TEXT("/bruno bouvret/", 2, 0, 5),
+    CREDIT_TEXT("/gunther galipot/", 2, 0, 5),
+    CREDIT_TEXT("/sacha gentilhomme/", 2, 0, 5),
+    CREDIT_TEXT("/michael guez/", 2, 0, 5),
+    CREDIT_TEXT("/christophe thibaut/", 2, 3, 5),
+    CREDIT_LANG(116, 2, 102, 0),
+    CREDIT_TEXT("/alexandra steible/", 2, 0, 0),
+    CREDIT_LANG(111, 2, 0, 0),
+    CREDIT_TEXT("/kamal aitmihoub/", 2, 0, 0),
+    CREDIT_TEXT("/david gilson/", 2, 0, 0),
+    CREDIT_TEXT("/sophie esturgie/", 2, 0, 0),
+    CREDIT_TEXT("/jacques exertie/", 2, 0, 0),
+    CREDIT_TEXT("/gregoire pons/", 2, 0, 0),
+    CREDIT_TEXT("/veronique rondello/", 2, 0, 0),
+    CREDIT_TEXT("/beatrice sauterau/", 2, 0, 0),
+    CREDIT_TEXT("/philippe vindolet", 2, 0, 0),
+    CREDIT_TEXT("/christian volckman/", 2, 3, 0),
+    CREDIT_LANG(117, 2, 102, 1),
+    CREDIT_TEXT("/eric pelatan/", 2, 0, 1),
+    CREDIT_TEXT("/sylvaine jenny/", 2, 3, 1),
+    CREDIT_LANG(114, 2, 102, 0),
+    CREDIT_TEXT("/jean christophe alessandri/", 2, 0, 0),
+    CREDIT_TEXT("/sophie ancel/", 2, 0, 0),
+    CREDIT_TEXT("/olivier bechard/", 2, 0, 0),
+    CREDIT_TEXT("/nicolas bocquillon/", 2, 0, 0),
+    CREDIT_TEXT("/jean marc geffroy/", 2, 0, 0),
+    CREDIT_TEXT("/laurent rettig/", 2, 0, 0),
+    CREDIT_TEXT("/olivier soleil/", 2, 3, 0),
+    CREDIT_LANG(118, 2, 102, 5),
+    CREDIT_TEXT("/bertrand helias/", 2, 0, 5),
+    CREDIT_TEXT("/yann le tensorer/", 2, 0, 5),
+    CREDIT_TEXT("/daniel palix/", 2, 0, 5),
+    CREDIT_LANG(111, 2, 0, 5),
+    CREDIT_TEXT("/cyril cauchois/", 2, 0, 5),
+    CREDIT_TEXT("/olivier couvreur/", 2, 0, 5),
+    CREDIT_TEXT("/antoine dodens/", 2, 0, 5),
+    CREDIT_TEXT("/antonio ferreira/", 2, 0, 5),
+    CREDIT_TEXT("/philippe fuentes/", 2, 0, 5),
+    CREDIT_TEXT("/benoit germain/", 2, 0, 5),
+    CREDIT_TEXT("/christophe giraud/", 2, 0, 5),
+    CREDIT_TEXT("/frederic houde/", 2, 0, 5),
+    CREDIT_TEXT("/francois mahieu/", 2, 0, 5),
+    CREDIT_TEXT("/christian mihalache/", 2, 0, 5),
+    CREDIT_TEXT("/sebastien morin/", 2, 0, 5),
+    CREDIT_TEXT("/bogdan radusi/", 2, 0, 5),
+    CREDIT_TEXT("/daniel raviart/", 2, 0, 5),
+    CREDIT_TEXT("/olivier rozier/", 2, 0, 5),
+    CREDIT_TEXT("/jozef skrabo/", 2, 0, 5),
+    CREDIT_TEXT("/gilles vanwalleghem/", 2, 3, 5),
+    CREDIT_LANG(119, 2, 102, 0),
+    CREDIT_TEXT("/stephane bellanger/", 2, 0, 0),
+    CREDIT_TEXT("/didier lord/", 2, 0, 0),
+    CREDIT_LANG(111, 2, 0, 0),
+    CREDIT_TEXT("/olivier amiaud/", 2, 0, 0),
+    CREDIT_TEXT("/sylvain brunet/", 2, 0, 0),
+    CREDIT_TEXT("/nathalie drouet/", 2, 0, 0),
+    CREDIT_TEXT("/dominique dumont/", 2, 0, 0),
+    CREDIT_TEXT("/kamel feunas/", 2, 0, 0),
+    CREDIT_TEXT("/remy gazel/", 2, 0, 0),
+    CREDIT_TEXT("/didier leglise/", 2, 0, 0),
+    CREDIT_TEXT("/jean marc litchmann/", 2, 0, 0),
+    CREDIT_TEXT("/frederic louvre/", 2, 0, 0),
+    CREDIT_TEXT("/guillaume michel/", 2, 0, 0),
+    CREDIT_TEXT("/olivier mortier/", 2, 0, 0),
+    CREDIT_TEXT("/frederic prados/", 2, 0, 0),
+    CREDIT_TEXT("/stephane ronse/", 2, 0, 0),
+    CREDIT_TEXT("/rene de wael/", 2, 3, 0),
+    CREDIT_LANG(120, 2, 102, 1),
+    CREDIT_TEXT("/emmanuelle cosso/", 2, 0, 1),
+    CREDIT_LANG(111, 2, 0, 1),
+    CREDIT_TEXT("/mitsuyuki bando/", 2, 0, 1),
+    CREDIT_TEXT("/chris benard/", 2, 0, 1),
+    CREDIT_TEXT("/patrice dozier/", 2, 0, 1),
+    CREDIT_TEXT("/douglas rand/", 2, 0, 1),
+    CREDIT_TEXT("/steven perkinson/", 2, 0, 1),
+    CREDIT_TEXT("/christian stonner/", 2, 3, 1),
+    CREDIT_LANG(121, 2, 102, 1),
+    CREDIT_TEXT("/serge hascoet/", 2, 0, 1),
+    CREDIT_LANG(111, 2, 0, 1),
+    CREDIT_TEXT("/bruno barone/", 2, 0, 1),
+    CREDIT_TEXT("/thomas belmont/", 2, 0, 1),
+    CREDIT_TEXT("/nicolas bocquillon/", 2, 0, 1),
+    CREDIT_TEXT("/bruno bouvret/", 2, 0, 1),
+    CREDIT_TEXT("/christophe cavelan/", 2, 0, 1),
+    CREDIT_TEXT("/gunther galipot/", 2, 0, 1),
+    CREDIT_TEXT("/sacha gentilhomme/", 2, 0, 1),
+    CREDIT_TEXT("/marc gioan/", 2, 0, 1),
+    CREDIT_TEXT("/michael guez/", 2, 0, 1),
+    CREDIT_TEXT("/benoit macon/", 2, 0, 1),
+    CREDIT_TEXT("/lionel rico/", 2, 0, 1),
+    CREDIT_TEXT("/emmanuel texandier/", 2, 0, 1),
+    CREDIT_TEXT("/christophe thibaut/", 2, 0, 1),
+    CREDIT_TEXT("/dorian thibaut/", 2, 3, 1),
+    CREDIT_LANG(122, 2, 102, 2),
+    CREDIT_TEXT("/agnes haegel/", 2, 3, 2),
+    CREDIT_LANG(123, 2, 102, 5),
+    CREDIT_TEXT("/ludimedia : gerard guillemot/", 2, 2, 5),
+    CREDIT_LANG(124, 2, 102, 5),
+    CREDIT_TEXT("/ubi studios : michel guillemot/", 2, 2, 5),
+    CREDIT_LANG(125, 2, 102, 5),
+    CREDIT_TEXT("/ubi soft :  yves guillemot/", 2, 4, 5),
+    CREDIT_LANG(126, 2, 0, 1),
+    CREDIT_LANG(127, 2, 6, 1),
+    CREDIT_LANG(128, 1, 0, 1),
+    {"rayman", 200, 0, 2, 255, 2}
+});
+
+#undef CREDIT_TEXT
+#undef CREDIT_LANG
+
 //95828
 extern u8 DemoRecord[1500] INIT(= {
         0, 41, 32, 8, 0, 19, 32, 27, 0, 30, 4, 2, 0, 60, 32, 11, 0, 16, 4, 12, 0, 69, 4, 7, 36, 20, 32, 27, 0, 74,
@@ -2961,6 +3090,7 @@ extern u8* EffetBufferNormal; //CD130
 extern s32 TempsDemo; //CD134
 extern u8* DrawBufferNormal; //CD138
 extern void (*anim_func)(void); //CD13C
+extern credit_t credits[135]; //CD140
 
 extern char save_ray_copy[4]; //CD794
 extern char save_ray[3][4]; //CD798

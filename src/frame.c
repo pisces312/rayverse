@@ -20,6 +20,7 @@ s32 playVideo2(const char* path, const char* filename, s32 a3, u8 a4) {
     if (MusicCdActive) {
 
     }
+    fclose(fp);
     return 0; // stub
 }
 
