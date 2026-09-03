@@ -79,7 +79,12 @@ void start_cd_bbdead(void) {
 
 //1CFFC
 void start_cd_gameover(void) {
-    //nullsub
+    if (JeuCracker) {
+        MusicCdActive = false;
+    }
+    if (MusicCdActive) {
+        play_cd_track(10, false); // Game-over music - "Once More"
+    }
 }
 
 //1D028

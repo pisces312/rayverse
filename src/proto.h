@@ -547,7 +547,7 @@ void allume_vitraux(const u8 pattern[5]);
 
 // display.c
 s16 display_inter_anim(u32 a1);
-void continue_fonction(void);
+s16 continue_fonction(u32 a1);
 void DO_CONTINUE(void);
 s16 saisie_nom_prg(u32 a1);
 s16 selection_save_option_prg(u32 a1);

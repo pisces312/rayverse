@@ -866,32 +866,257 @@ void DISPLAY_SYMBOLE(s16 a1, s16 a2, s16 a3, u8 a4) {
 
 //6A3EC
 void INIT_CONTINUE(void) {
-    print_once("Not implemented: INIT_CONTINUE"); //stub
+    loop_nb_trames = 0;
+    loop_timing = 10;
+    fin_continue = 0;
+    compteur = 0;
+    joy_done = 0;
+    Etape_History = 0;
+
+    if (ray_mode == MODE_4_MORT_DE_RAYMAN_ON_MS || RayEvts.tiny) {
+        ray = rms;
+        NewMs = 1;
+        ray_mode = MODE_1_RAYMAN;
+        RayEvts.tiny = 0;
+    }
+
+    ray.anim_frame = 0;
+    ray.y = 135 - ray.offset_by;
+
+    /* PC 1.21 always uses the saved continue count.  The later Android port
+     * instead grants 99 on easy and forces zero on hard difficulty. */
+    if (nb_continue != 0) {
+        set_main_and_sub_etat(&ray, 3, 24);
+        ray.x = 225 - ray.offset_bx;
+    } else {
+        ray.x = 80 - ray.offset_bx;
+        set_main_etat(&ray, 3);
+        loop_timing = 255;
+        set_sub_etat(&ray, horloge[20] > 10 ? 52 : 51);
+    }
+
+    ray.flags.flip_x = false;
+    ray.speed_x = 0;
+    ray.speed_y = 0;
+    set_zoom_mode(0);
+
+    clockobj.x = 80;
+    clockobj.y = 130;
+    set_main_and_sub_etat(&clockobj, 0, 0);
+
+    mapobj[0].screen_x = 120;
+    mapobj[0].screen_y = 110;
+    mapobj[0].offset_bx = 80;
+    mapobj[0].offset_by = 64;
+    mapobj[0].timer = 0;
+    mapobj[0].flags.alive = false;
+    set_main_and_sub_etat(&mapobj[0], 5, 20);
+
+    PROC_EXIT = 0;
+    xmapinit = xmap;
+    ymapinit = ymap;
+    xmap = 0;
+    ymap = 0;
 }
 
 //6A5E8
 void CHEAT_MODE_CONTINUE(void) {
-    print_once("Not implemented: CHEAT_MODE_CONTINUE"); //stub
+    compteur = 1;
+    if (upjoy() && joy_done != 1) {
+        joy_done += 1;
+    } else if (downjoy() && joy_done != 3) {
+        joy_done += 2;
+    } else if (rightjoy() && joy_done != 7) {
+        joy_done += 4;
+    } else if (leftjoy() && joy_done != 15) {
+        joy_done += 8;
+    } else {
+        compteur = 0;
+    }
+
+    switch (Etape_History) {
+        case 0:
+            if (joy_done == 1 && nb_continue <= 3) {
+                Etape_History = 1;
+            } else if (compteur != 0) {
+                Etape_History = 0;
+                joy_done = 0;
+            }
+            break;
+        case 1:
+            if (joy_done == 3) {
+                Etape_History = 2;
+            } else if (compteur != 0) {
+                Etape_History = 0;
+                joy_done = 0;
+            }
+            break;
+        case 2:
+            if (joy_done == 7) {
+                Etape_History = 3;
+            } else if (compteur != 0) {
+                Etape_History = 0;
+                joy_done = 0;
+            }
+            break;
+        case 3:
+            if (joy_done == 15) {
+                mapobj[0].flags.alive = true;
+                nb_continue = 10;
+                mapobj[0].timer = 128;
+                joy_done = 0;
+            } else if (compteur != 0) {
+                Etape_History = 0;
+                joy_done = 0;
+            }
+            break;
+        default:
+            break;
+    }
 }
 
 //6A798
 void MAIN_CONTINUE_PRG(void) {
-    print_once("Not implemented: MAIN_CONTINUE_PRG"); //stub
+    horloges(1);
+
+    if ((ValidButPressed() || StartButPressed() || SelectButPressed()) &&
+        ray.sub_etat >= 25 && ray.sub_etat <= 27
+    ) {
+        if (mapobj[0].timer != 128) {
+            mapobj[0].flags.alive = true;
+        }
+        PlaySnd_old(216);
+        if (ray.sub_etat == 27) {
+            set_main_and_sub_etat(&ray, 3, 29);
+            ray.flags.flip_x = true;
+        } else {
+            set_main_and_sub_etat(&ray, 3, 31);
+        }
+        ray.anim_frame = 0;
+        set_main_and_sub_etat(&clockobj, 0, 1);
+    }
+
+    SET_X_SPEED(&ray);
+    ray.speed_x = (s16)instantSpeed(ray.speed_x);
+
+    switch (ray.sub_etat) {
+        case 25:
+            if (ray.x + ray.offset_bx < 70) {
+                set_main_and_sub_etat(&ray, 3, 26);
+                ray.anim_frame = 0;
+            }
+            break;
+        case 26:
+            if (ray.anim_frame > 6) {
+                ray.speed_x = 0;
+            }
+            break;
+        case 27:
+            ++loop_nb_trames;
+            if (loop_nb_trames == 60) {
+                loop_nb_trames = 0;
+                --loop_timing;
+            }
+            break;
+        case 28:
+            if (ray.anim_frame > 40) {
+                fin_continue = 1;
+                save1.save_obj_id = -1;
+            }
+            if (ray.anim_frame > 16) {
+                ray.speed_x = 0;
+            }
+            break;
+        case 29:
+            ray.flags.flip_x = true;
+            if (ray.x + ray.offset_bx > 180 && EOA(&ray)) {
+                set_sub_etat(&ray, 28);
+                ray.anim_frame = 0;
+            } else if (ray.anim_frame < 64) {
+                ray.speed_x = 0;
+            }
+            break;
+        case 30:
+            if (ray.x + ray.offset_bx > 175 && EOA(&ray)) {
+                set_sub_etat(&ray, 28);
+                ray.anim_frame = 0;
+            }
+            break;
+        case 31:
+            if (EOA(&ray)) {
+                ray.flags.flip_x = true;
+            }
+            break;
+        default:
+            break;
+    }
+
+    if (horloge[2] != 0 || ray.sub_etat != 25) {
+        ray.x += ray.speed_x;
+        calc_obj_pos(&ray);
+        DO_ANIM(&ray);
+    }
+
+    calc_obj_pos(&clockobj);
+    DO_ANIM(&clockobj);
+
+    if (mapobj[0].flags.alive) {
+        DO_ANIM(&mapobj[0]);
+        if (EOA(&mapobj[0])) {
+            if (mapobj[0].timer != 128) {
+                --nb_continue;
+            }
+            mapobj[0].flags.alive = false;
+        }
+    }
+
+    if (loop_timing != 255) {
+        CHEAT_MODE_CONTINUE();
+    } else {
+        MAIN_NO_MORE_CONTINUE_PRG();
+    }
 }
 
 //6AAA8
 void FIN_CONTINUE_PRG(void) {
-    print_once("Not implemented: FIN_CONTINUE_PRG"); //stub
+    if (loop_timing == 255) {
+        fin_continue = 0;
+        fin_du_jeu = 1;
+        menuEtape = 0;
+    } else if (loop_timing != -1) {
+        status_bar.lives = 3;
+        ray.hit_points = 2;
+        status_bar.max_hitp = 2;
+        fin_du_jeu = 0;
+    } else {
+        menuEtape = 0;
+    }
+
+    xmap = xmapinit;
+    ymap = ymapinit;
 }
 
 //6AB24
 void INIT_NO_MORE_CONTINUE(void) {
-    print_once("Not implemented: INIT_NO_MORE_CONTINUE"); //stub
+    ray.screen_x = 80 - ray.offset_bx;
+    ray.screen_y = 135 - ray.offset_by;
+    set_main_etat(&ray, 3);
+    set_sub_etat(&ray, horloge[20] > 10 ? 52 : 51);
+    ray.flags.flip_x = false;
+    PROC_EXIT = 0;
+    anim_func = MAIN_NO_MORE_CONTINUE_PRG;
 }
 
 //6AB98
 void MAIN_NO_MORE_CONTINUE_PRG(void) {
-    print_once("Not implemented: MAIN_NO_MORE_CONTINUE_PRG"); //stub
+    PROC_EXIT = SelectButPressed();
+    if (EOA(&ray)) {
+        PROC_EXIT = 1;
+    }
+    if (PROC_EXIT) {
+        fin_continue = 1;
+        save1.save_obj_id = -1;
+    }
 }
 
 //6ABEC

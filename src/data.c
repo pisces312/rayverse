@@ -3446,7 +3446,7 @@ extern u8 last_credit; //CFA3A
 extern u8 nb_continue; //CFA3B
 extern u8 fin_dark; //CFA3C
 extern u8 NBRE_SAVE; //CFA3D
-extern u8 byte_CFA3E; //CFA3E
+extern u8 Etape_History; //CFA3E
 extern u8 nouvelle_partie; //CFA3F
 extern u8 PROC_EXIT; //CFA40
 extern u8 First_Hist; //CFA41

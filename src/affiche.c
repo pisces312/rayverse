@@ -1250,7 +1250,27 @@ void display_time(s16 time) {
 
 //1B79C
 void DISPLAY_CONTINUE_SPR(void) {
-    print_once("Not implemented: DISPLAY_CONTINUE_SPR"); //stub
+    if (loop_timing == 255) {
+        /* The PC executable uses doubled apostrophes for every non-English
+         * language.  They are font control characters, not quotation marks. */
+        const char* game_over = language == 0 ? "game over" : "''game over''";
+        display_text(game_over, 181, 182, 2, 2);
+    } else {
+        display_sprite(&div_obj, 27, 146, 162, 1);
+        DISPLAY_BLACKBOX(146, 162, 34, 22, -1, 0);
+
+        display_sprite(&div_obj, nb_continue / 10 + 28, 188, 162, 1);
+        display_sprite(&div_obj, nb_continue % 10 + 28, 203, 162, 1);
+        display_sprite(&div_obj, loop_timing / 10 + 28, 52, 162, 1);
+        display_sprite(&div_obj, loop_timing % 10 + 28, 67, 162, 1);
+        display_text(":", 88, 184, 2, 2);
+    }
+
+    display2(&ray);
+    display2(&clockobj);
+    if (mapobj[0].flags.alive) {
+        display2(&mapobj[0]);
+    }
 }
 
 //1B944

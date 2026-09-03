@@ -17,13 +17,36 @@ s16 display_inter_anim(u32 a1) {
 }
 
 //34174
-void continue_fonction(void) {
-    //stub
+s16 continue_fonction(u32 a1) {
+    (void)a1;
+    CLRSCR();
+    DISPLAY_FOND_CONTINUE();
+    DISPLAY_CONTINUE_SPR();
+    MAIN_CONTINUE_PRG();
+    readinput();
+
+    return loop_timing == -1 || fin_continue;
 }
 
 //341B0
 void DO_CONTINUE(void) {
-    //stub
+    if (status_bar.lives == 0 && fin_du_jeu == 1 && !fin_dark) {
+        block_free(main_mem_level);
+        LOAD_CONTINUE_SCREEN(main_mem_level);
+        SAVE_PALETTE(&rvb_plan3);
+        EFFACE_VIDEO();
+        start_cd_gameover();
+        INIT_FADE_IN();
+        INIT_CONTINUE();
+        SYNCHRO_LOOP(continue_fonction);
+        DO_FADE_OUT();
+        FIN_CONTINUE_PRG();
+        stop_cd();
+        stop_all_snd();
+        RESTORE_PALETTE();
+        block_free(main_mem_level);
+        new_level = 1;
+    }
 }
 
 //34240
@@ -810,12 +833,13 @@ void LOAD_PERFECT_SCREEN(mem_t* mem) {
 //36610
 void LOAD_CONTINUE_SCREEN(mem_t* mem) {
     LoadPlan3InVignet(mem, 11);
-    //stub: there is a DRM check here
+    // The remaining PC code is only a DOS free-disk-space DRM check.
 }
 
 //36644
 void DISPLAY_FOND_CONTINUE(void) {
-    print_once("Not implemented: DISPLAY_FOND_CONTINUE"); //stub
+    // PC vignette 11 contains a 320x137 panel; 137 is an asset dimension.
+    DisplayAnyPictureNormal(PLAN3BIT, draw_buffer, 0, 0, 0, 0, 320, 320, 137);
 }
 
 //36678
