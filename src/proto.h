@@ -1577,7 +1577,7 @@ void DoTrumpetPoingCollision(obj_t* obj, s16 sprite);
 void DoTrompetteRaymanZDD(obj_t* obj);
 
 // ufo.c
-void test_block_chdir(obj_t* obj, s16 a1, s16 a2);
+bool test_block_chdir(obj_t* obj, s16* block_index, s16 offset_x, s16 offset_y);
 void DO_MOVING_WITH_INDICATOR_COMMAND(obj_t* obj);
 void DO_IDC_COMMAND(obj_t* obj);
 void DO_LEV_POING_COLLISION(obj_t* obj, s16 sprite);

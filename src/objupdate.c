@@ -1364,7 +1364,6 @@ void DO_JOE_COMMAND(obj_t* obj) {
         }
         if (obj->main_etat == 0 && obj->sub_etat == 1) {
             if (vignet_joe_affichee) {
-                Vignet_To_Display = 1;
                 vignet_joe_affichee = 0;
                 finBosslevel.helped_joe_1 = 1;
                 obj->timer = 0;

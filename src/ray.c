@@ -248,7 +248,7 @@ void rayMayLandOnAnObject(u8* param_1, s16 obj_id) {
                         break;
                     case TYPE_UFO_IDC:
                         if (finBosslevel.helped_joe_2)
-                            START_UFO(cur_obj); //TODO
+                            START_UFO(cur_obj);
                         break;
                     case TYPE_POELLE:
                         if (!(cur_obj->main_etat == 0 && cur_obj->sub_etat == 1)) {
