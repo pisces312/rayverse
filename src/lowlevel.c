@@ -243,59 +243,175 @@ void flocon_clipping(s32 h1, s32 h2, s32 w1, s32 w2) {
     Bloc_floc_W2 = w2;
 }
 
+static bool weather_stamp_is_visible(u8* buffer, s32 x, s32 y, s32 width, s32 height) {
+    /*
+     * The PC routines test only the stamp's upper-left point; their caller
+     * shrinks the right/bottom clipping edges to accommodate the stamps.
+     * Keep that convention, with an explicit framebuffer check so a bad clip
+     * rectangle cannot turn a cosmetic effect into an out-of-bounds write.
+     */
+    return buffer != NULL &&
+        x >= Bloc_floc_W1 && x <= Bloc_floc_W2 &&
+        y >= Bloc_floc_H1 && y <= Bloc_floc_H2 &&
+        x >= 0 && x + width <= SCREEN_WIDTH &&
+        y >= 0 && y + height <= SCREEN_HEIGHT;
+}
+
+static void weather_pixel(u8* buffer, s32 x, s32 y, u8 color) {
+    buffer[y * SCREEN_WIDTH + x] = color;
+}
+
 //15640
-void draw_flocon5_Normal(void) {
-    print_once("Not implemented: draw_flocon5_Normal"); //stub
+void draw_flocon5_Normal(s32 x, s32 y, u8* buffer) {
+    if (weather_stamp_is_visible(buffer, x, y, 1, 1)) {
+        weather_pixel(buffer, x, y, 5);
+    }
 }
 
 //15670
-void draw_flocon1_Normal(void) {
-    print_once("Not implemented: draw_flocon1_Normal"); //stub
+void draw_flocon1_Normal(s32 x, s32 y, u8* buffer) {
+    if (weather_stamp_is_visible(buffer, x, y, 1, 1)) {
+        weather_pixel(buffer, x, y, 7);
+    }
 }
 
 //156A0
-void draw_flocon2_Normal(void) {
-    print_once("Not implemented: draw_flocon2_Normal"); //stub
+void draw_flocon2_Normal(s32 x, s32 y, u8* buffer) {
+    if (!weather_stamp_is_visible(buffer, x, y, 2, 2)) {
+        return;
+    }
+    weather_pixel(buffer, x,     y,     7);
+    weather_pixel(buffer, x + 1, y,     8);
+    weather_pixel(buffer, x,     y + 1, 6);
+    weather_pixel(buffer, x + 1, y + 1, 7);
 }
 
 //156DC
-void draw_flocon3_Normal(void) {
-    print_once("Not implemented: draw_flocon3_Normal"); //stub
+void draw_flocon3_Normal(s32 x, s32 y, u8* buffer) {
+    if (!weather_stamp_is_visible(buffer, x, y, 3, 3)) {
+        return;
+    }
+    weather_pixel(buffer, x + 1, y,     6);
+    weather_pixel(buffer, x,     y + 1, 8);
+    weather_pixel(buffer, x + 1, y + 1, 6);
+    weather_pixel(buffer, x + 2, y + 1, 6);
+    weather_pixel(buffer, x + 1, y + 2, 6);
 }
 
 //15725
-void draw_pluie4_Normal(void) {
-    print_once("Not implemented: draw_pluie4_Normal"); //stub
+void draw_pluie4_Normal(s32 x, s32 y, u8* buffer) {
+    if (weather_stamp_is_visible(buffer, x, y, 1, 1)) {
+        weather_pixel(buffer, x, y, 3);
+    }
 }
 
 //15755
-void draw_flocon4_Normal(void) {
-    print_once("Not implemented: draw_flocon4_Normal"); //stub
+void draw_flocon4_Normal(s32 x, s32 y, u8* buffer) {
+    if (!weather_stamp_is_visible(buffer, x, y, 4, 4)) {
+        return;
+    }
+    weather_pixel(buffer, x + 1, y,     5);
+    weather_pixel(buffer, x + 2, y,     5);
+    weather_pixel(buffer, x,     y + 1, 5);
+    weather_pixel(buffer, x + 1, y + 1, 7);
+    weather_pixel(buffer, x + 2, y + 1, 7);
+    weather_pixel(buffer, x + 3, y + 1, 5);
+    weather_pixel(buffer, x,     y + 2, 5);
+    weather_pixel(buffer, x + 1, y + 2, 7);
+    weather_pixel(buffer, x + 2, y + 2, 7);
+    weather_pixel(buffer, x + 3, y + 2, 5);
+    weather_pixel(buffer, x + 1, y + 3, 5);
+    weather_pixel(buffer, x + 2, y + 3, 5);
 }
 
 //157A6
-void draw_pluie5_Normal(void) {
-    print_once("Not implemented: draw_pluie5_Normal"); //stub
+void draw_pluie5_Normal(s32 x, s32 y, u8* buffer) {
+    if (!weather_stamp_is_visible(buffer, x, y, 2, 2)) {
+        return;
+    }
+    weather_pixel(buffer, x + 1, y,     4);
+    weather_pixel(buffer, x,     y + 1, 5);
 }
 
 //157DF
-void draw_flocon7_Normal(void) {
-    print_once("Not implemented: draw_flocon7_Normal"); //stub
+void draw_flocon7_Normal(s32 x, s32 y, u8* buffer) {
+    if (!weather_stamp_is_visible(buffer, x, y, 4, 4)) {
+        return;
+    }
+    weather_pixel(buffer, x + 1, y,     6);
+    weather_pixel(buffer, x + 2, y,     6);
+    weather_pixel(buffer, x,     y + 1, 6);
+    weather_pixel(buffer, x + 1, y + 1, 8);
+    weather_pixel(buffer, x + 2, y + 1, 8);
+    weather_pixel(buffer, x + 3, y + 1, 6);
+    weather_pixel(buffer, x,     y + 2, 6);
+    weather_pixel(buffer, x + 1, y + 2, 8);
+    weather_pixel(buffer, x + 2, y + 2, 8);
+    weather_pixel(buffer, x + 3, y + 2, 6);
+    weather_pixel(buffer, x + 1, y + 3, 6);
+    weather_pixel(buffer, x + 2, y + 3, 6);
 }
 
 //15830
-void draw_pluie6_Normal(void) {
-    print_once("Not implemented: draw_pluie6_Normal"); //stub
+void draw_pluie6_Normal(s32 x, s32 y, u8* buffer) {
+    if (!weather_stamp_is_visible(buffer, x, y, 3, 3)) {
+        return;
+    }
+    weather_pixel(buffer, x + 1, y,     4);
+    weather_pixel(buffer, x + 2, y,     2);
+    weather_pixel(buffer, x,     y + 1, 5);
+    weather_pixel(buffer, x + 1, y + 1, 3);
+    weather_pixel(buffer, x + 2, y + 1, 2);
+    weather_pixel(buffer, x,     y + 2, 3);
+    weather_pixel(buffer, x + 1, y + 2, 6);
 }
 
 //1587D
-void draw_flocon6_Normal(void) {
-    print_once("Not implemented: draw_flocon6_Normal"); //stub
+void draw_flocon6_Normal(s32 x, s32 y, u8* buffer) {
+    if (!weather_stamp_is_visible(buffer, x, y, 6, 6)) {
+        return;
+    }
+    weather_pixel(buffer, x + 2, y,     6);
+    weather_pixel(buffer, x + 3, y,     6);
+    weather_pixel(buffer, x + 1, y + 1, 7);
+    weather_pixel(buffer, x + 2, y + 1, 8);
+    weather_pixel(buffer, x + 3, y + 1, 8);
+    weather_pixel(buffer, x + 4, y + 1, 7);
+    weather_pixel(buffer, x,     y + 2, 6);
+    weather_pixel(buffer, x + 1, y + 2, 8);
+    weather_pixel(buffer, x + 2, y + 2, 8);
+    weather_pixel(buffer, x + 3, y + 2, 8);
+    weather_pixel(buffer, x + 4, y + 2, 8);
+    weather_pixel(buffer, x + 5, y + 2, 6);
+    weather_pixel(buffer, x,     y + 3, 6);
+    weather_pixel(buffer, x + 1, y + 3, 8);
+    weather_pixel(buffer, x + 2, y + 3, 8);
+    weather_pixel(buffer, x + 3, y + 3, 8);
+    weather_pixel(buffer, x + 4, y + 3, 8);
+    weather_pixel(buffer, x + 5, y + 3, 6);
+    weather_pixel(buffer, x + 1, y + 4, 7);
+    weather_pixel(buffer, x + 2, y + 4, 8);
+    weather_pixel(buffer, x + 3, y + 4, 8);
+    weather_pixel(buffer, x + 4, y + 4, 7);
+    weather_pixel(buffer, x + 2, y + 5, 6);
+    weather_pixel(buffer, x + 3, y + 5, 6);
 }
 
 //158F4
-void draw_pluie7_Normal(void) {
-    print_once("Not implemented: draw_pluie7_Normal"); //stub
+void draw_pluie7_Normal(s32 x, s32 y, u8* buffer) {
+    if (!weather_stamp_is_visible(buffer, x, y, 4, 4)) {
+        return;
+    }
+    weather_pixel(buffer, x + 2, y,     3);
+    weather_pixel(buffer, x + 3, y,     2);
+    weather_pixel(buffer, x + 1, y + 1, 3);
+    weather_pixel(buffer, x + 2, y + 1, 2);
+    weather_pixel(buffer, x + 3, y + 1, 4);
+    weather_pixel(buffer, x,     y + 2, 5);
+    weather_pixel(buffer, x + 1, y + 2, 4);
+    weather_pixel(buffer, x + 2, y + 2, 3);
+    weather_pixel(buffer, x,     y + 3, 4);
+    weather_pixel(buffer, x + 1, y + 3, 6);
 }
 
 //1595D

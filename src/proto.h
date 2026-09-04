@@ -52,17 +52,17 @@ void Display_Bloc_Clippe(void* a1, void* a2, s16 a3, s16 a4);
 void Display_Bloc_Plein_Clippe(void* a1, void* a2, s16 a3, s16 a4);
 void fplot_Normal(u8* buffer, s32 x, s32 y, u8 color);
 void flocon_clipping(s32 h1, s32 h2, s32 w1, s32 w2);
-void draw_flocon5_Normal(void);
-void draw_flocon1_Normal(void);
-void draw_flocon2_Normal(void);
-void draw_flocon3_Normal(void);
-void draw_pluie4_Normal(void);
-void draw_flocon4_Normal(void);
-void draw_pluie5_Normal(void);
-void draw_flocon7_Normal(void);
-void draw_pluie6_Normal(void);
-void draw_flocon6_Normal(void);
-void draw_pluie7_Normal(void);
+void draw_flocon5_Normal(s32 x, s32 y, u8* buffer);
+void draw_flocon1_Normal(s32 x, s32 y, u8* buffer);
+void draw_flocon2_Normal(s32 x, s32 y, u8* buffer);
+void draw_flocon3_Normal(s32 x, s32 y, u8* buffer);
+void draw_pluie4_Normal(s32 x, s32 y, u8* buffer);
+void draw_flocon4_Normal(s32 x, s32 y, u8* buffer);
+void draw_pluie5_Normal(s32 x, s32 y, u8* buffer);
+void draw_flocon7_Normal(s32 x, s32 y, u8* buffer);
+void draw_pluie6_Normal(s32 x, s32 y, u8* buffer);
+void draw_flocon6_Normal(s32 x, s32 y, u8* buffer);
+void draw_pluie7_Normal(s32 x, s32 y, u8* buffer);
 void get_joy_input2_dos1(u8* source_buf, u8* dest_buf, s32 width, s32 height); // ?
 void get_joy_input2_dos2(u8* source_buf, u8* dest_buf, s32 width, s32 height); // ?
 void get_joy_input2_windows1(u8* source_buf, u8* dest_buf, s32 width, s32 height);

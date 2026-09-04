@@ -97,7 +97,7 @@ void DO_MAIN_LOOP_PC_NORMAL(u8* a1) {
 
         if (MapAvecPluieOuNeige) {
             flocon_clipping(Bloc_lim_H1, Bloc_lim_H2 - 6, Bloc_lim_W1, Bloc_lim_W2 - 4);
-            display_flocons_behind(); //TODO
+            display_flocons_behind();
         }
 
         DRAW_MAP(DrawBufferNormal, &BIG_MAP);
@@ -107,7 +107,7 @@ void DO_MAIN_LOOP_PC_NORMAL(u8* a1) {
         Display_Sprite_On_Front(plan0_width, plan0_height, Bloc_lim_W1, Bloc_lim_H1, Bloc_lim_W2, Bloc_lim_H2); //TODO
 
         if (MapAvecPluieOuNeige) {
-            display_flocons_before(); //TODO
+            display_flocons_before();
         }
 
         Display_and_free_luciole(DrawBufferNormal);

@@ -1701,6 +1701,7 @@ enum dos_scancode_enum {
 
 typedef void (draw_func_t)(s32 x, s32 sprite_field_A, s32 y, vec2b_t size, u8* draw_buf, u8* image_data);
 typedef void (fplot_func_t)(u8* buffer, s32 x, s32 y, u8 color);
+typedef void (weather_draw_func_t)(s32 x, s32 y, u8* buffer);
 typedef s16 (scene_func_t)(u32 a1);
 typedef s16 (synchro_loop_palette_func_t)(void);
 typedef s32 (calcbloc_func_t)(s32 a1, s32 a2);

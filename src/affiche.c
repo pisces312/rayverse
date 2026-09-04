@@ -541,14 +541,85 @@ void DISPLAY_ALL_OBJECTS(void) {
     }
 }
 
+static void display_flocon_band(s16 band, s16 depth, weather_draw_func_t* draw_func) {
+    if (draw_func == NULL || draw_buffer == NULL || flocon_tab == NULL) {
+        return;
+    }
+
+    s16 first = floc_ind[band];
+    s16 end = first + nb_floc[band];
+    s32 projection = 0x10000 / (depth + 0x100);
+    s32 origin_x = PROJ_CENTER_X - ((projection * PROJ_CENTER_X) >> 8);
+    s32 origin_y = PROJ_CENTER_Y - ((projection * PROJ_CENTER_Y) >> 8);
+
+    for (s16 flocon_index = first; flocon_index < end; ++flocon_index) {
+        flocon_t* flocon = &flocon_tab[flocon_index];
+        s32 x = origin_x + ((flocon->field_0 * projection) >> 8);
+        s32 y = origin_y + ((flocon->field_2 * projection) >> 8);
+        draw_func(x, y, draw_buffer);
+    }
+}
+
 //19D2C
 void display_flocons_behind(void) {
-    //stub
+    s16 old_center_x = PROJ_CENTER_X;
+    s16 old_center_y = PROJ_CENTER_Y;
+
+    /*
+     * This 170-pixel vanishing point is shared by the PC and 240-line PS1
+     * paths. It is part of the weather perspective, not SCREEN_HEIGHT-derived.
+     */
+    set_proj_center(SCREEN_WIDTH / 2, 170);
+
+    s16 snow_size = 3;
+    s16 rain_size = 5;
+    for (s16 band = 3, depth = 32; depth < 192; ++band, depth += 32) {
+        weather_draw_func_t* draw_func;
+        if (num_world == world_1_jungle) {
+            if (rain_size == 5) {
+                draw_func = drawpluie6NormalETX;
+            } else if (rain_size > 2) {
+                draw_func = drawpluie5NormalETX;
+            } else {
+                draw_func = drawpluie4NormalETX;
+            }
+        } else {
+            /* PC order: 4, 3, 2, 1, 5. PS1 instead uses 5, 4, 3, 2, 1. */
+            switch (snow_size) {
+                case 3: draw_func = drawflocon4NormalETX; break;
+                case 2: draw_func = drawflocon3NormalETX; break;
+                case 1: draw_func = drawflocon2NormalETX; break;
+                case 0: draw_func = drawflocon1NormalETX; break;
+                default: draw_func = drawflocon5NormalETX; break;
+            }
+        }
+        display_flocon_band(band, depth, draw_func);
+        snow_size--;
+        rain_size--;
+    }
+
+    set_proj_center(old_center_x, old_center_y);
 }
 
 //19F08
 void display_flocons_before(void) {
-    //stub
+    s16 old_center_x = PROJ_CENTER_X;
+    s16 old_center_y = PROJ_CENTER_Y;
+
+    set_proj_center(SCREEN_WIDTH / 2, 170);
+    for (s16 band = 0, depth = -64; depth < 32; ++band, depth += 32) {
+        weather_draw_func_t* draw_func;
+        if (num_world == world_1_jungle) {
+            draw_func = drawpluie7NormalETX;
+        } else if (band == 0) {
+            draw_func = drawflocon6NormalETX;
+        } else {
+            draw_func = drawflocon7NormalETX;
+        }
+        display_flocon_band(band, depth, draw_func);
+    }
+
+    set_proj_center(old_center_x, old_center_y);
 }
 
 //1A110
