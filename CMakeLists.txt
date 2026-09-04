@@ -15,10 +15,8 @@ add_executable(rayverse
         src/stb_vorbis.c
 )
 
-# NOTE: To suppress building with Dear ImGui, pass -DWITH_IMGUI=0 to CMake (or change the value below to 0)
-if (NOT DEFINED WITH_IMGUI)
-    set(WITH_IMGUI 1)
-endif()
+# NOTE: To suppress building with Dear ImGui, pass -DWITH_IMGUI=ON to CMake (or change the value below to ON)
+option(WITH_IMGUI "Build with Dear ImGui debugging interface" OFF)
 #TODO: make ImGui layout work with platforms other than Windows
 if (WITH_IMGUI AND WIN32)
     target_compile_definitions(rayverse PRIVATE

@@ -1155,10 +1155,9 @@ void START_WORLD_VIGNET(void) {
     SWAP_BUFFERS();
     DISPLAY_LOADING();
 
-    // Do loading screen effect (TODO)
-    if (sub_38208(9, 100, DrawBufferNormal, DrawBufferNormal)) {
-        sub_38258();
-        sub_38290();
+    if (InitWorldVignetteTransitionIn(9, 100, DrawBufferNormal, DrawBufferNormal)) {
+        RunWorldVignetteTransition();
+        FreeWorldVignetteTransition();
         DISPLAY_LOADING();
     }
 
@@ -1174,10 +1173,9 @@ void START_WORLD_VIGNET(void) {
 
 //36F48
 void END_WORLD_VIGNET(void) {
-    // Do loading screen effect (TODO)
-    if (sub_38220(9, 100, display_buffer, DrawBufferNormal)) {
-        sub_38258();
-        sub_38290();
+    if (InitWorldVignetteTransitionOut(9, 100, display_buffer, DrawBufferNormal)) {
+        RunWorldVignetteTransition();
+        FreeWorldVignetteTransition();
     }
     fade_out(2, &rvb_plan3);
     current_rvb = rvb_save;
