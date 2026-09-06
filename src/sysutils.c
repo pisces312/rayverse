@@ -26,12 +26,23 @@ void block_free(mem_t* mem) {
 	mem->len = 0;
 }
 
+#ifdef ANDROID
+/* android_fileio.c provides fopen interception for the SAF fd bridge.
+ * fclose is intentionally NOT intercepted: android_fopen() dups the SAF fd,
+ * so closing the dup'd FILE* leaves the original fd (owned by ContentResolver)
+ * intact and ready for the next open. */
+extern FILE* android_fopen(const char* path, const char* mode);
+#define FOPEN(p, m)   android_fopen((p), (m))
+#else
+#define FOPEN(p, m)   fopen((p), (m))
+#endif
+
 FILE* open_data_file(const char* filename, bool error_is_fatal) {
-	FILE* fp = fopen(filename, "rb");
+	FILE* fp = FOPEN(filename, "rb");
 	if (!fp) {
 		char data_path[256];
 		snprintf(data_path, 256, "data" PATH_SEP "%s", filename);
-		fp = fopen(data_path, "rb");
+		fp = FOPEN(data_path, "rb");
 	}
 	if (!fp && error_is_fatal) {
 		char message[256];
@@ -45,11 +56,11 @@ FILE* open_data_file(const char* filename, bool error_is_fatal) {
 
 mem_t* read_entire_file(const char* filename, bool error_is_fatal) {
 	mem_t* result = NULL;
-	FILE* fp = fopen(filename, "rb");
+	FILE* fp = FOPEN(filename, "rb");
     if (!fp) {
         char data_path[256];
         snprintf(data_path, 256, "data" PATH_SEP "%s", filename);
-        fp = fopen(data_path, "rb");
+        fp = FOPEN(data_path, "rb");
     }
 	if (fp) {
 		struct stat st;
@@ -66,7 +77,7 @@ mem_t* read_entire_file(const char* filename, bool error_is_fatal) {
 					size_t bytes_read = fread(result->data, 1, filesize, fp);
 					if (bytes_read != (size_t)filesize) {
 						printf("Error while reading file '%s'\n", filename);
-						exit(1);
+						fatal_error();
 					}
 				}
 			}

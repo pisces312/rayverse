@@ -6,6 +6,11 @@
 #include <dsound.h>
 #include <GL/gl.h>
 #include <GL/glu.h>
+#elif defined(ANDROID)
+// Android: use GLES via SDL2
+#include <SDL.h>
+#include <GLES/gl.h>
+#include <GLES2/gl2.h>
 #else
 // Headers specific to Linux / macOS
 #include <SDL.h>
@@ -34,8 +39,13 @@
 #define strcasecmp _stricmp
 #endif
 
+#ifdef ANDROID
+// Android: use stb_vorbis implementation (not header-only)
+#include "stb_vorbis.c"
+#else
 #define STB_VORBIS_HEADER_ONLY
 #include "stb_vorbis.c"
+#endif
 
 #include "common.h"
 

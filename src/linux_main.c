@@ -94,15 +94,26 @@ int main(int argc, char** argv) {
     }
 
     // Decide GL+GLSL versions
-#ifdef __APPLE__
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG); // Always required on Mac
-#else
+#if defined(ANDROID)
+    // Android: EGL only exposes GLES (no desktop/core profile). Request a
+    // GLES 2.0 context to match the "#version 100" shaders.
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
-#endif
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#elif defined(__APPLE__)
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG); // Always required on Mac
     // GL 3.3 Core
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+#else
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+    // GL 3.3 Core
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+#endif
 
     int desired_window_width = 640;
     int desired_window_height = 400;
@@ -189,8 +200,14 @@ int main(int argc, char** argv) {
 void linux_prepare_frame(app_state_t* app_state) {
     process_input(app_state->sdl.window);
 
+#ifndef ANDROID
     glDrawBuffer(GL_BACK);
+#endif
+#ifdef ANDROID
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f); /* black bars around the letterboxed picture */
+#else
     glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+#endif
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 //    win32_get_window_dimension(app_state->win32.window, &app_state->client_width, &app_state->client_height);

@@ -55,7 +55,14 @@ void stop_ogg(ogg_t* ogg) {
 void play_cd_track(s32 track_number, bool looping) {
 	stop_ogg(&ogg_cd_track);
 	ogg_cd_track = open_cd_vorbis(track_number, looping);
+#ifdef ANDROID
+	/* Only mark playing when the track actually loaded; otherwise the
+	 * "while (is_ogg_playing)" wait in updateLogo() spins forever when the
+	 * ogg file is missing or unreadable via SAF. */
+	is_ogg_playing = (ogg_cd_track.decoder != NULL);
+#else
 	is_ogg_playing = true;
+#endif
 	MusicCdActive = true;
 }
 
