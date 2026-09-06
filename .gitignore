@@ -6,6 +6,8 @@ data/
 out/
 Debug/
 Release/
+game-data/
+.workbuddy/
 *.exe
 *.dll
 *.app/*
