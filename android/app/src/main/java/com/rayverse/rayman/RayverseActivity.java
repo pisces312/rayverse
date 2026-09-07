@@ -21,6 +21,8 @@ public class RayverseActivity extends SDLActivity {
     private static final String PREFS = "rayverse_prefs";
     private static final String KEY_ORIENTATION = "orientation"; /* "landscape" | "portrait" */
 
+    private GamepadOverlay overlay;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         applyOrientation();
@@ -47,7 +49,7 @@ public class RayverseActivity extends SDLActivity {
 
         /* Attach gamepad overlay */
         if (mLayout != null) {
-            GamepadOverlay overlay = new GamepadOverlay(this);
+            overlay = new GamepadOverlay(this);
             overlay.setOnSettingsClickListener(this::showSettingsMenu);
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -68,17 +70,31 @@ public class RayverseActivity extends SDLActivity {
     private void showSettingsMenu() {
         final SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         boolean isLandscape = !"portrait".equals(prefs.getString(KEY_ORIENTATION, "landscape"));
-        String targetLabel = isLandscape ? "切换到竖屏" : "切换到横屏";
+        String orientLabel = isLandscape ? "切换到竖屏" : "切换到横屏";
 
         new AlertDialog.Builder(this)
             .setTitle("设置")
-            .setItems(new String[]{ targetLabel }, (dialog, which) -> {
-                String newOrientation = isLandscape ? "portrait" : "landscape";
-                prefs.edit().putString(KEY_ORIENTATION, newOrientation).apply();
-                setRequestedOrientation("portrait".equals(newOrientation)
-                        ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                        : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
-            })
+            .setItems(new String[]{
+                    orientLabel,
+                    "编辑按钮位置",
+                    "恢复默认布局"
+                }, (dialog, which) -> {
+                    switch (which) {
+                        case 0:
+                            String newOrientation = isLandscape ? "portrait" : "landscape";
+                            prefs.edit().putString(KEY_ORIENTATION, newOrientation).apply();
+                            setRequestedOrientation("portrait".equals(newOrientation)
+                                    ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                    : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+                            break;
+                        case 1:
+                            if (overlay != null) overlay.setEditMode(true);
+                            break;
+                        case 2:
+                            if (overlay != null) overlay.resetLayout();
+                            break;
+                    }
+                })
             .setNegativeButton("关闭", null)
             .show();
     }

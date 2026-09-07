@@ -1,6 +1,7 @@
 package com.rayverse.rayman;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -10,16 +11,18 @@ import android.util.SparseIntArray;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.Toast;
 import org.libsdl.app.SDLActivity;
 
 /**
  * Virtual gamepad overlay for Rayman 1.
  *
- * Landscape: D-pad on the left, action buttons on the right (over the game).
+ * Landscape: D-pad on the bottom-left, action buttons on the bottom-right.
  * Portrait:  game is letterboxed to the top, controls live in the free space
  *            below so they never cover the picture.
  *
- * A small settings button opens the orientation menu.
+ * Button positions can be customized by dragging while in edit mode.
+ * A small settings button opens the orientation menu (or exits edit mode).
  *
  * Buttons map to SDL keyboard scancodes via SDLActivity.onNativeKeyDown/Up.
  */
@@ -55,6 +58,13 @@ public class GamepadOverlay extends View {
     /* Logical game resolution aspect (320x200) for portrait letterboxing. */
     private static final float GAME_ASPECT = 320f / 200f; /* 1.6 */
 
+    /* SharedPreferences keys for custom layout */
+    private static final String PREFS = "rayverse_prefs";
+    private static final String KEY_BTN_X = "btn_";
+    private static final String KEY_BTN_Y = "_y";
+    private static final String KEY_BTN_SIZE = "_size";
+    private static final String KEY_LAYOUT_VERSION = "layout_version";
+
     /* Press counters (multi-touch: two fingers on one button) */
     private final int[] pressCount = new int[BTN_COUNT];
     /* Pointer ID -> button mapping */
@@ -63,6 +73,20 @@ public class GamepadOverlay extends View {
     private final Rect[] hitAreas = new Rect[BTN_COUNT];
 
     private boolean landscape = true;
+
+    /* Custom layout state */
+    private final float[] customCx = new float[BTN_COUNT];
+    private final float[] customCy = new float[BTN_COUNT];
+    private final float[] customSize = new float[BTN_COUNT];
+    private boolean hasCustomLayout = false;
+    private boolean editMode = false;
+    private int dragButtonId = -1;
+    private float dragOffsetX, dragOffsetY;
+
+    public interface OnEditModeChangeListener {
+        void onEditModeChanged(boolean editing);
+    }
+    private OnEditModeChangeListener editListener;
 
     /* Settings button */
     public interface OnSettingsClickListener { void onSettingsClick(); }
@@ -76,6 +100,7 @@ public class GamepadOverlay extends View {
     private final Paint borderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint gearPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint editHintPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private float density;
     private float cornerRadius;
 
@@ -96,10 +121,99 @@ public class GamepadOverlay extends View {
         gearPaint.setStyle(Paint.Style.STROKE);
         gearPaint.setStrokeWidth(2 * density);
         gearPaint.setColor(0x99FFFFFF);
+
+        editHintPaint.setTextAlign(Paint.Align.CENTER);
+        editHintPaint.setTextSize(18 * density);
+        editHintPaint.setColor(0xFFFFFFFF);
+
+        loadCustomLayout();
     }
 
     public void setOnSettingsClickListener(OnSettingsClickListener l) {
         settingsListener = l;
+    }
+
+    public void setOnEditModeChangeListener(OnEditModeChangeListener l) {
+        editListener = l;
+    }
+
+    public boolean isEditMode() {
+        return editMode;
+    }
+
+    public void setEditMode(boolean enabled) {
+        if (editMode == enabled) return;
+        editMode = enabled;
+        if (editMode) {
+            ensureCustomSnapshot();
+            Toast.makeText(getContext(), "拖动按钮调整位置，点击齿轮完成", Toast.LENGTH_LONG).show();
+        } else {
+            saveCustomLayout();
+        }
+        invalidate();
+        if (editListener != null) editListener.onEditModeChanged(editMode);
+    }
+
+    public void resetLayout() {
+        SharedPreferences.Editor editor = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
+        for (int i = 0; i < BTN_COUNT; i++) {
+            editor.remove(KEY_BTN_X + i);
+            editor.remove(KEY_BTN_Y + i);
+            editor.remove(KEY_BTN_SIZE + i);
+            customCx[i] = customCy[i] = customSize[i] = 0f;
+        }
+        editor.remove(KEY_LAYOUT_VERSION);
+        editor.apply();
+        hasCustomLayout = false;
+        dragButtonId = -1;
+        requestLayout();
+        invalidate();
+    }
+
+    private void loadCustomLayout() {
+        SharedPreferences prefs = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        hasCustomLayout = false;
+        for (int i = 0; i < BTN_COUNT; i++) {
+            String kx = KEY_BTN_X + i;
+            String ky = KEY_BTN_Y + i;
+            String ks = KEY_BTN_SIZE + i;
+            if (prefs.contains(kx) && prefs.contains(ky) && prefs.contains(ks)) {
+                customCx[i] = prefs.getFloat(kx, 0.5f);
+                customCy[i] = prefs.getFloat(ky, 0.5f);
+                customSize[i] = prefs.getFloat(ks, 0.1f);
+                hasCustomLayout = true;
+            } else {
+                customCx[i] = customCy[i] = customSize[i] = 0f;
+            }
+        }
+    }
+
+    private void saveCustomLayout() {
+        if (!hasCustomLayout) return;
+        SharedPreferences.Editor editor = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
+        for (int i = 0; i < BTN_COUNT; i++) {
+            editor.putFloat(KEY_BTN_X + i, customCx[i]);
+            editor.putFloat(KEY_BTN_Y + i, customCy[i]);
+            editor.putFloat(KEY_BTN_SIZE + i, customSize[i]);
+        }
+        editor.putInt(KEY_LAYOUT_VERSION, 1);
+        editor.apply();
+    }
+
+    /* Take current default layout and store it as the editable custom layout */
+    private void ensureCustomSnapshot() {
+        if (hasCustomLayout) return;
+        int w = getWidth();
+        int h = getHeight();
+        if (w == 0 || h == 0) return;
+        for (int i = 0; i < BTN_COUNT; i++) {
+            Rect r = hitAreas[i];
+            if (r == null) continue;
+            customCx[i] = r.exactCenterX() / w;
+            customCy[i] = r.exactCenterY() / h;
+            customSize[i] = (float) r.width() / Math.min(w, h);
+        }
+        hasCustomLayout = true;
     }
 
     @Override
@@ -109,53 +223,72 @@ public class GamepadOverlay extends View {
         int h = bottom - top;
         if (w == 0 || h == 0) return;
         landscape = (w >= h);
-        if (landscape) layoutLandscape(w, h);
-        else           layoutPortrait(w, h);
+        if (hasCustomLayout) {
+            layoutFromCustom(w, h);
+        } else {
+            if (landscape) layoutLandscape(w, h);
+            else           layoutPortrait(w, h);
+        }
         layoutSettingsButton(w, h);
     }
 
+    private void layoutFromCustom(int w, int h) {
+        for (int i = 0; i < BTN_COUNT; i++) {
+            int size = (int) (customSize[i] * Math.min(w, h));
+            int cx = (int) (customCx[i] * w);
+            int cy = (int) (customCy[i] * h);
+            setButtonRect(i, cx, cy, size);
+        }
+    }
+
+    private void setButtonRect(int id, int cx, int cy, int size) {
+        hitAreas[id] = rect(cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2);
+    }
+
+    /*
+     * Default landscape layout: D-pad bottom-left, actions bottom-right.
+     */
     private void layoutLandscape(int w, int h) {
-        int btnSize = Math.min(w, h) / 5;
+        int btnSize = (int) (Math.min(w, h) * 0.13f);
         int pad = btnSize / 2;
 
-        int dpadCenterX = w / 4;
-        int dpadCenterY = h / 2;
+        int dpadCenterX = (int) (w * 0.20f);
+        int dpadCenterY = (int) (h * 0.72f);
         hitAreas[BTN_UP]    = rect(dpadCenterX - btnSize/2, dpadCenterY - btnSize - pad, dpadCenterX + btnSize/2, dpadCenterY - pad);
         hitAreas[BTN_DOWN]  = rect(dpadCenterX - btnSize/2, dpadCenterY + pad,           dpadCenterX + btnSize/2, dpadCenterY + btnSize + pad);
         hitAreas[BTN_LEFT]  = rect(dpadCenterX - btnSize - pad, dpadCenterY - btnSize/2, dpadCenterX - pad,       dpadCenterY + btnSize/2);
         hitAreas[BTN_RIGHT] = rect(dpadCenterX + pad,           dpadCenterY - btnSize/2, dpadCenterX + btnSize + pad, dpadCenterY + btnSize/2);
 
-        int actCenterX = w * 3 / 4;
-        int actCenterY = h / 2;
+        int actCenterX = (int) (w * 0.80f);
+        int actCenterY = (int) (h * 0.72f);
         hitAreas[BTN_A] = rect(actCenterX - btnSize/2, actCenterY - btnSize - pad, actCenterX + btnSize/2, actCenterY - pad);
         hitAreas[BTN_B] = rect(actCenterX + pad,           actCenterY - btnSize/2, actCenterX + btnSize + pad, actCenterY + btnSize/2);
         hitAreas[BTN_X] = rect(actCenterX - btnSize - pad, actCenterY - btnSize/2, actCenterX - pad,           actCenterY + btnSize/2);
         hitAreas[BTN_Y] = rect(actCenterX - btnSize/2,     actCenterY + pad,       actCenterX + btnSize/2,     actCenterY + btnSize + pad);
     }
 
+    /*
+     * Default portrait layout: controls in the free space below the letterboxed game.
+     */
     private void layoutPortrait(int w, int h) {
-        /* Game is letterboxed to the top (height = w / 1.6). Controls fill the
-         * remaining space below so they never overlap the picture. */
         int gameH = (int) (w / GAME_ASPECT);
         int freeTop = Math.min(gameH, h);
         int freeH = Math.max(h - freeTop, 0);
         int centerY = freeTop + freeH / 2;
-        int btnSize = Math.min(w / 7, Math.max(freeH / 4, 1));
+        int btnSize = Math.min(w / 8, Math.max(freeH / 6, 1));
         int pad = btnSize / 2;
 
-        int dpadCenterX = w / 3;
-        int dpadCenterY = centerY;
-        hitAreas[BTN_UP]    = rect(dpadCenterX - btnSize/2, dpadCenterY - btnSize - pad, dpadCenterX + btnSize/2, dpadCenterY - pad);
-        hitAreas[BTN_DOWN]  = rect(dpadCenterX - btnSize/2, dpadCenterY + pad,           dpadCenterX + btnSize/2, dpadCenterY + btnSize + pad);
-        hitAreas[BTN_LEFT]  = rect(dpadCenterX - btnSize - pad, dpadCenterY - btnSize/2, dpadCenterX - pad,       dpadCenterY + btnSize/2);
-        hitAreas[BTN_RIGHT] = rect(dpadCenterX + pad,           dpadCenterY - btnSize/2, dpadCenterX + btnSize + pad, dpadCenterY + btnSize/2);
+        int dpadCenterX = (int) (w * 0.22f);
+        hitAreas[BTN_UP]    = rect(dpadCenterX - btnSize/2, centerY - btnSize - pad, dpadCenterX + btnSize/2, centerY - pad);
+        hitAreas[BTN_DOWN]  = rect(dpadCenterX - btnSize/2, centerY + pad,           dpadCenterX + btnSize/2, centerY + btnSize + pad);
+        hitAreas[BTN_LEFT]  = rect(dpadCenterX - btnSize - pad, centerY - btnSize/2, dpadCenterX - pad,       centerY + btnSize/2);
+        hitAreas[BTN_RIGHT] = rect(dpadCenterX + pad,           centerY - btnSize/2, dpadCenterX + btnSize + pad, centerY + btnSize/2);
 
-        int actCenterX = w * 2 / 3;
-        int actCenterY = centerY;
-        hitAreas[BTN_A] = rect(actCenterX - btnSize/2, actCenterY - btnSize - pad, actCenterX + btnSize/2, actCenterY - pad);
-        hitAreas[BTN_B] = rect(actCenterX + pad,           actCenterY - btnSize/2, actCenterX + btnSize + pad, actCenterY + btnSize/2);
-        hitAreas[BTN_X] = rect(actCenterX - btnSize - pad, actCenterY - btnSize/2, actCenterX - pad,           actCenterY + btnSize/2);
-        hitAreas[BTN_Y] = rect(actCenterX - btnSize/2,     actCenterY + pad,       actCenterX + btnSize/2,     actCenterY + btnSize + pad);
+        int actCenterX = (int) (w * 0.78f);
+        hitAreas[BTN_A] = rect(actCenterX - btnSize/2, centerY - btnSize - pad, actCenterX + btnSize/2, centerY - pad);
+        hitAreas[BTN_B] = rect(actCenterX + pad,           centerY - btnSize/2, actCenterX + btnSize + pad, centerY + btnSize/2);
+        hitAreas[BTN_X] = rect(actCenterX - btnSize - pad, centerY - btnSize/2, actCenterX - pad,           centerY + btnSize/2);
+        hitAreas[BTN_Y] = rect(actCenterX - btnSize/2,     centerY + pad,       actCenterX + btnSize/2,     centerY + btnSize + pad);
     }
 
     private void layoutSettingsButton(int w, int h) {
@@ -176,22 +309,24 @@ public class GamepadOverlay extends View {
             Rect r = hitAreas[i];
             if (r == null) continue;
             boolean pressed = pressCount[i] > 0;
-            drawButton(canvas, r, LABELS[i], pressed);
+            boolean dragging = (i == dragButtonId);
+            drawButton(canvas, r, LABELS[i], pressed, dragging);
         }
         drawSettingsButton(canvas);
+        if (editMode) drawEditHint(canvas);
     }
 
-    private void drawButton(Canvas canvas, Rect r, String label, boolean pressed) {
+    private void drawButton(Canvas canvas, Rect r, String label, boolean pressed, boolean dragging) {
         RectF rf = new RectF(r);
 
         fillPaint.setStyle(Paint.Style.FILL);
-        fillPaint.setColor(pressed ? 0x55FFFFFF : 0x22FFFFFF);
+        fillPaint.setColor(dragging ? 0x55FFFF00 : (pressed ? 0x55FFFFFF : 0x22FFFFFF));
         canvas.drawRoundRect(rf, cornerRadius, cornerRadius, fillPaint);
 
-        borderPaint.setColor(pressed ? 0xCCFFFFFF : 0x55FFFFFF);
+        borderPaint.setColor(pressed || dragging ? 0xCCFFFFFF : 0x55FFFFFF);
         canvas.drawRoundRect(rf, cornerRadius, cornerRadius, borderPaint);
 
-        textPaint.setColor(pressed ? 0xFFFFFFFF : 0x99FFFFFF);
+        textPaint.setColor(pressed || dragging ? 0xFFFFFFFF : 0x99FFFFFF);
         textPaint.setTextSize(r.height() * 0.42f);
         Paint.FontMetrics fm = textPaint.getFontMetrics();
         float cx = r.exactCenterX();
@@ -211,7 +346,6 @@ public class GamepadOverlay extends View {
         borderPaint.setColor(pressed ? 0xCCFFFFFF : 0x55FFFFFF);
         canvas.drawRoundRect(rf, cornerRadius, cornerRadius, borderPaint);
 
-        /* Simple gear icon drawn with strokes */
         float cx = settingsRect.exactCenterX();
         float cy = settingsRect.exactCenterY();
         float outer = Math.min(settingsRect.width(), settingsRect.height()) * 0.28f;
@@ -221,9 +355,9 @@ public class GamepadOverlay extends View {
         Path path = new Path();
         for (int i = 0; i < teeth * 2; i++) {
             double angle = Math.PI * 2 * i / (teeth * 2);
-            float r = (i % 2 == 0) ? outer : inner;
-            float x = cx + (float) (Math.cos(angle) * r);
-            float y = cy + (float) (Math.sin(angle) * r);
+            float rr = (i % 2 == 0) ? outer : inner;
+            float x = cx + (float) (Math.cos(angle) * rr);
+            float y = cy + (float) (Math.sin(angle) * rr);
             if (i == 0) path.moveTo(x, y);
             else        path.lineTo(x, y);
         }
@@ -231,6 +365,13 @@ public class GamepadOverlay extends View {
         gearPaint.setColor(pressed ? 0xFFFFFFFF : 0x99FFFFFF);
         canvas.drawPath(path, gearPaint);
         canvas.drawCircle(cx, cy, inner * 0.35f, gearPaint);
+    }
+
+    private void drawEditHint(Canvas canvas) {
+        String hint = "拖动按钮调整位置，点击齿轮完成";
+        float x = canvas.getWidth() / 2f;
+        float y = canvas.getHeight() * 0.15f;
+        canvas.drawText(hint, x, y, editHintPaint);
     }
 
     @Override
@@ -254,10 +395,25 @@ public class GamepadOverlay extends View {
                 float y = event.getY(pointerIndex);
                 if (settingsRect.contains((int) x, (int) y)) {
                     settingsPressed = true;
-                    if (action == MotionEvent.ACTION_DOWN && settingsListener != null) {
-                        settingsListener.onSettingsClick();
+                    if (action == MotionEvent.ACTION_DOWN) {
+                        if (editMode) {
+                            setEditMode(false);
+                        } else if (settingsListener != null) {
+                            settingsListener.onSettingsClick();
+                        }
                     }
                     invalidate();
+                    break;
+                }
+                if (editMode) {
+                    int btn = hitTest(x, y);
+                    if (btn >= 0) {
+                        dragButtonId = btn;
+                        dragOffsetX = x - hitAreas[btn].exactCenterX();
+                        dragOffsetY = y - hitAreas[btn].exactCenterY();
+                        ensureCustomSnapshot();
+                        invalidate();
+                    }
                     break;
                 }
                 int btn = hitTest(x, y);
@@ -268,6 +424,15 @@ public class GamepadOverlay extends View {
                 break;
             }
             case MotionEvent.ACTION_MOVE: {
+                if (editMode && dragButtonId >= 0) {
+                    int idx = event.findPointerIndex(event.getPointerId(0));
+                    if (idx >= 0) {
+                        float x = event.getX(idx);
+                        float y = event.getY(idx);
+                        moveDraggedButton(x - dragOffsetX, y - dragOffsetY);
+                    }
+                    break;
+                }
                 for (int i = 0; i < event.getPointerCount(); i++) {
                     int pid = event.getPointerId(i);
                     float x = event.getX(i);
@@ -304,6 +469,14 @@ public class GamepadOverlay extends View {
                     invalidate();
                     break;
                 }
+                if (editMode) {
+                    if (dragButtonId >= 0) {
+                        saveCustomLayout();
+                        dragButtonId = -1;
+                        invalidate();
+                    }
+                    break;
+                }
                 int btn = pointerMap.get(pointerId, -1);
                 if (btn >= 0) {
                     releaseButton(btn);
@@ -314,12 +487,30 @@ public class GamepadOverlay extends View {
             }
             case MotionEvent.ACTION_CANCEL: {
                 settingsPressed = false;
+                if (editMode) {
+                    dragButtonId = -1;
+                }
                 forceReleaseAll();
                 pointerMap.clear();
+                invalidate();
                 break;
             }
         }
         return true;
+    }
+
+    private void moveDraggedButton(float cx, float cy) {
+        if (dragButtonId < 0) return;
+        int w = getWidth();
+        int h = getHeight();
+        if (w == 0 || h == 0) return;
+        float nx = Math.max(0f, Math.min(1f, cx / w));
+        float ny = Math.max(0f, Math.min(1f, cy / h));
+        customCx[dragButtonId] = nx;
+        customCy[dragButtonId] = ny;
+        int size = (int) (customSize[dragButtonId] * Math.min(w, h));
+        setButtonRect(dragButtonId, (int) cx, (int) cy, size);
+        invalidate();
     }
 
     private int hitTest(float x, float y) {
@@ -357,6 +548,7 @@ public class GamepadOverlay extends View {
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
+        if (editMode) saveCustomLayout();
         forceReleaseAll();
         pointerMap.clear();
     }
