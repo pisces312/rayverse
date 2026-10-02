@@ -22,3 +22,7 @@ game-data/
 *.ilk
 *.obj
 *.sbr
+
+# Local-only agent instructions (kept on disk, not in the repo)
+AGENTS.md
+agents.md
