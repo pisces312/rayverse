@@ -147,5 +147,8 @@ public class SetupActivity extends Activity {
 
     private void launchGame() {
         startActivity(new Intent(this, RayverseActivity.class));
+        /* The auto-start path never builds a content view, so resuming this activity
+         * after the game quits would show a black screen. Leave the task instead. */
+        finish();
     }
 }

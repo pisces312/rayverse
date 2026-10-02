@@ -19,6 +19,14 @@ gradle assembleDebug
 # 产物: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## 操作按键
+
+详见 `docs/controls-android.md`。引擎读取 DOS scancode（默认 Ctrl=跳、Alt=拳、X=抓、方向键=移动、Enter/Space=确认、Esc=菜单）；虚拟手柄的 keycode 必须与之对齐，没有"跑步键"（`RayEvts.run` 由加成/触发区给出）。
+
+## 调试记录
+
+真机移植问题的症状/根因/验证方式见 `docs/android-debug-log.md`，抓日志与 adb 的坑也在里面。跨架构移植的头号陷阱：`s8` 之类必须写 `signed char`，AArch64 的 plain `char` 是无符号的。
+
 ## 关键架构
 
 ### Unity Build
@@ -45,7 +53,7 @@ C:    fopen() → android_fopen() → fd 表命中 → fdopen(fd) / 未命中 �
 ```
 
 关键文件：
-- `android_jni.c` — JNI 层，fd 映射表（MAX_FILES=64）
+- `android_jni.c` — JNI 层，fd 映射表（MAX_FD_ENTRIES=256）
 - `android_fileio.c` — fopen/fclose 拦截
 - `src/sysutils.c` — `#ifdef ANDROID` 宏重定向
 
