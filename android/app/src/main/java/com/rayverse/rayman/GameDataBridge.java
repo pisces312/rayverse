@@ -12,10 +12,7 @@ import android.util.Log;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Manages SAF-based game data access for Rayverse.
@@ -49,15 +46,6 @@ public class GameDataBridge {
         "INTRO.DAT",
         "PCMAP/BRAY.DAT",
     };
-
-    private static final Set<String> ALL_KNOWN_PATHS = new HashSet<>();
-    static {
-        ALL_KNOWN_PATHS.addAll(Arrays.asList(REQUIRED_FILES));
-        ALL_KNOWN_PATHS.addAll(Arrays.asList(OPTIONAL_FILES));
-        for (int t = 2; t <= 20; t++) {
-            ALL_KNOWN_PATHS.add(String.format("Music/rayman%02d.ogg", t));
-        }
-    }
 
     /* JNI native methods — only callable after libmain.so is loaded by SDL */
     public static native void nativeRegisterFd(String path, int fd, int mode);
@@ -181,7 +169,7 @@ public class GameDataBridge {
 
                 if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType)) {
                     scanDir(childDocId, relPath, result);
-                } else if (ALL_KNOWN_PATHS.contains(relPath) || isMusicOgg(relPath)) {
+                } else {
                     try {
                         Uri fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, childDocId);
                         ParcelFileDescriptor pfd = resolver.openFileDescriptor(fileUri, "r");
@@ -199,10 +187,6 @@ public class GameDataBridge {
         } catch (Exception e) {
             Log.e(TAG, "scanDir failed for " + relPrefix, e);
         }
-    }
-
-    private boolean isMusicOgg(String path) {
-        return path.startsWith("Music/rayman") && path.endsWith(".ogg");
     }
 
     private SharedPreferences getPrefs() {

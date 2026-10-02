@@ -26,7 +26,7 @@
 
 /* ---- SAF fd table ---- */
 
-#define MAX_FD_ENTRIES 128
+#define MAX_FD_ENTRIES 256
 
 typedef struct {
     char path[512];   /* relative path like "PCMAP/ALLFIX.DAT" */
