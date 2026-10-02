@@ -23,6 +23,7 @@ public class SetupActivity extends Activity {
     private TextView statusText;
     private Button selectButton;
     private Button startButton;
+    private boolean gameLaunched = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -146,9 +147,20 @@ public class SetupActivity extends Activity {
     }
 
     private void launchGame() {
+        gameLaunched = true;
         startActivity(new Intent(this, RayverseActivity.class));
-        /* The auto-start path never builds a content view, so resuming this activity
-         * after the game quits would show a black screen. Leave the task instead. */
-        finish();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        /* This screen exists only to hand off to the game, and it has no content view on
+         * the auto-start path, so keeping it would show a black screen when the game ends.
+         * Finish once the game is on top of us: doing it from onCreate collapses the task
+         * and kills the activity we just started, and leaving it here lets ActivityManager
+         * resurrect the task when the game's process exits. */
+        if (gameLaunched) {
+            finish();
+        }
     }
 }

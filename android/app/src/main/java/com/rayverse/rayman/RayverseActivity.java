@@ -116,6 +116,21 @@ public class RayverseActivity extends SDLActivity {
     }
 
     @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        /* SDL only finishes this activity when SDL_main returns, so the process stays
+         * cached with the engine's memory arenas already freed - the next launch would
+         * reopen a dead engine. End the process once the activity is really gone.
+         * (Killing it while the activity is still resumed makes ActivityManager
+         * relaunch the task, which looks like the game restarting itself.) */
+        if (isFinishing()) {
+            Log.i(TAG, "Game over, ending process");
+            android.os.Process.killProcess(android.os.Process.myPid());
+            System.exit(0);
+        }
+    }
+
+    @Override
     protected String[] getLibraries() {
         return new String[]{ "SDL2", "main" };
     }

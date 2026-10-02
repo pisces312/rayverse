@@ -54,16 +54,30 @@ Java_com_rayverse_rayman_GameDataBridge_nativeRegisterFd(
     jstring jPath, jint fd, jint mode)
 {
     const char* path = (*env)->GetStringUTFChars(env, jPath, NULL);
-    if (g_fd_count < MAX_FD_ENTRIES) {
-        fd_entry_t* e = &g_fd_table[g_fd_count++];
-        strncpy(e->path, path, sizeof(e->path) - 1);
-        e->path[sizeof(e->path) - 1] = '\0';
-        e->fd = fd;
-        e->mode = mode;
-        LOGI("Registered fd %d for '%s' (mode=%d)", fd, path, mode);
-    } else {
-        LOGE("fd table full, cannot register '%s'", path);
+    fd_entry_t* e = NULL;
+    for (int i = 0; i < g_fd_count; i++) {
+        if (strcmp(g_fd_table[i].path, path) == 0) {
+            e = &g_fd_table[i];
+            /* Registering again happens when the game restarts inside the same process.
+             * The game holds dup()'d descriptors, so the old one can be closed here. */
+            if (e->fd != fd) close(e->fd);
+            break;
+        }
     }
+    if (e == NULL) {
+        if (g_fd_count >= MAX_FD_ENTRIES) {
+            LOGE("fd table full, cannot register '%s'", path);
+            close(fd);
+            (*env)->ReleaseStringUTFChars(env, jPath, path);
+            return;
+        }
+        e = &g_fd_table[g_fd_count++];
+    }
+    strncpy(e->path, path, sizeof(e->path) - 1);
+    e->path[sizeof(e->path) - 1] = '\0';
+    e->fd = fd;
+    e->mode = mode;
+    LOGI("Registered fd %d for '%s' (mode=%d)", fd, path, mode);
     (*env)->ReleaseStringUTFChars(env, jPath, path);
 }
 

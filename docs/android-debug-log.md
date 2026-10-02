@@ -7,7 +7,7 @@
 - **症状**：世界地图能弹出，约 1 帧后进程崩溃，logcat 停在 `DO_ANIM`。
 - **根因**：`LOAD_ALL_FIX()`（`src/load.c`）解析 ALLFIX.DAT 结尾的特殊对象索引时只读了 **7 个 s32**，而实际有 **8 个**。少读一个让后面的取值整体错位：`mapobj` 拿到第 3 号 ETA 表（第 5 行只有 14 项），而奖章需要 `eta[5][39..59]`。`get_eta()` 返回行外内存，`obj->animations + obj->anim_index` 解引用野指针。
 - **修复**：补上第 8 次 `mem_read`，赋给 `alpha_numbers`（`src/data.c` 中声明但从未被赋值的全局）。
-- **验证方式**：用 Python 脚本直接解析 `ALLFIX.DAT` 尾部字节，确认 8 个索引 `[1,5,6,7,3,4,8,2]` 恰好读到文件末尾，且第 4 号表第 5 行给出的奖章动画编号（38/45/46-51/32）连贯。
+- **验证方式**：用 Python 脚本直接解析 `ALLFIX.DAT` 尾部字节，确认 8 个索引 `[1,5,6,7,3,4,8,2]` 恰好读到文件末尾，且第 4 号表第 5 行给出的奖章动画编号（38/45/46-51/32）连贯。这个解析器已收进 `tools/parse_allfix.py`（`LOAD_ALL_FIX()` 的 Python 复刻），以后查对象/动画数据直接用它，不要再写一次性脚本。
 
 ## 2. "couldn't locate PCMAP/JUNGLE/RAY1.LEV"
 
@@ -43,18 +43,30 @@
 
 - **症状**：不返回安卓桌面，屏幕黑住；进程仍存活，前台 activity 是 `SetupActivity`。
 - **根因**：`SetupActivity.launchGame()` 只 `startActivity` 没有 `finish()`，任务栈是 `[SetupActivity, RayverseActivity]`。而 `SetupActivity.onCreate` 走"已保存 URI 直接进游戏"分支时提前 `return`，从未 `setContentView`。游戏结束、`RayverseActivity` 销毁后回到这个没有内容的 activity，即黑屏。
-- **修复**：`launchGame()` 里 `startActivity` 之后调用 `finish()`，游戏退出时任务栈清空，直接回桌面。
-- **相关日志**（说明 SDL 层退出本身是干净的）：
+- **修复**：`SetupActivity` 加 `gameLaunched` 标记，在 `onStop()` 里 `finish()`（此时游戏已在栈顶，安全）。
+- **踩过的坑**：直接在 `launchGame()`（由 `onCreate` 调用）里 `finish()` 会**把刚启动的 `RayverseActivity` 一起杀掉**——trampoline 在子 activity 真正起来之前结束自己，任务被折叠。日志特征：`Running main function` 后 1 ms 就 `Finished main function` + `onPause/onStop/onDestroy`。
+
+## 6. 退出后再次点图标：闪回桌面 / 又回到片头
+
+- **症状 A**：退出过一次，再点图标立刻回桌面。
+- **症状 B**（第一次修复后）：Exit 之后游戏自己回到 Ubi Soft 片头，像"重启了一遍"。
+- **根因**：引擎是**一次性程序**。`PcMain()` 末尾的 `FIN_GAME_LOOP()`/`END_GAME()` 已经 `block_free` 掉 `main_mem_level/world/sprite/fix` 与 `temp_mem_buf`；而 `main()` 里 `if (!app_state->game.initialized) game_init(...)` 因为全局仍是 1 而跳过，arena 永不重建 → 同进程第二次 `SDL_main` 直接返回。
+  另一方面，SDL 在 `SDL_main` 返回后只 `finish()` activity 不杀进程，进程被系统缓存复用；而在 activity 仍处于 resumed 时强杀进程，ActivityManager 会**重建任务栈**，于是 `SetupActivity` 又被拉起、再次进游戏（症状 B）。
+- **修复**：`RayverseActivity.onDestroy()` 中，`isFinishing()` 为真时 `killProcess(myPid()) + System.exit(0)`；配合第 5 条让 `SetupActivity` 提前离栈，任务栈里只剩游戏 activity，杀进程后无栈可重建。下次点图标是真正的冷启动。
+- **验证**（一次完整的 Exit→再进）：
 
   ```
-  V/SDL: Finished main function
-  V/SDL: onPause() / surfaceDestroyed() / onStop() / onDestroy()
-  E/SDL: SDLActivity thread ends (error=Try to release egl_surface with context probably still active)
+  main: main_Ray returned (0) → V/SDL: Finished main function
+  V/SDL: onDestroy() → I/Rayverse: Game over, ending process
+  I/ActivityManager: Process com.rayverse.rayman (pid 7936) has died: cch CRE
+  topResumedActivity=com.sec.android.app.launcher/.activities.LauncherActivity
   ```
 
-  最后一条是 GLES 拆除顺序的告警，不影响退出。
+  再点图标：新 pid、`Game data OK (100 files)`、`Running main function` 且不再立刻 `Finished`。
+- **顺带**：同进程重复注册 fd 会把表填满（`fd table full, cannot register 'PCMAP/RAY1.WLD'`）。`nativeRegisterFd` 改为按路径去重，命中旧项就 `close` 掉旧 fd（游戏侧持有的是 `dup()` 过的描述符）并复用表项；表真满时 `close(fd)` 防泄漏。
+- **无害告警**：退出时 `E/SDL: SDLActivity thread ends (error=Try to release egl_surface with context probably still active)` 是 GLES 拆除顺序问题，不影响退出。
 
-## 6. 调试回路中的工具坑
+## 7. 调试回路中的工具坑
 
 | 问题 | 现象 | 处理 |
 |------|------|------|
@@ -63,8 +75,9 @@
 | 截图损坏 | `adb shell screencap -p > f.png` 得到带 `efbbbf` 开头的伪文本 | 用 `adb exec-out screencap -p > f.png` |
 | 构建"过快" | gradle 2-3 秒完成，怀疑没重编 | 核对产物 mtime，或 `find android/app/build -name "*.so" -newer src/common.h` |
 | Gradle 缓存 | 改 `Android.mk` 后不生效 | 删 `app/build` + `app/.cxx` + `.gradle` 重来 |
+| `adb shell input keyevent` 驱动游戏 | 按键日志显示 down/up 只差 1 ms，引擎按 60 Hz 轮询 `Touche_Enfoncee`，经常一整帧都采不到 | 用 `input keyevent --longpress <code>`（按住 ~500 ms），每步截图确认；YES/NO 弹窗里"红色"才是当前选中项，需先用左/右切换 |
 
-## 7. 抓日志的标准做法
+## 8. 抓日志的标准做法
 
 ```bash
 # 只取相关 tag，落盘后台跟踪
