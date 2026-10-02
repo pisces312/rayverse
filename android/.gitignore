@@ -21,3 +21,6 @@ captures/
 /*.png
 /*.DAT
 /_scratch/
+
+# Release artifacts (APK + screenshots uploaded to the GitHub release)
+/dist/
