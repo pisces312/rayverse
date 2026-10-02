@@ -29,6 +29,28 @@ gradle assembleDebug
 # android/app/build/outputs/apk/debug/app-debug.apk (~4.35 MB)
 ```
 
+## 发布版构建（签名的 release APK）
+
+`assembleRelease` 走 R8 混淆 + native 符号裁剪，产物比 debug 小一半（约 1.9 MB）。签名信息只从环境变量读取，脚本里不落任何口令：
+
+```bash
+export KEY_STORE="D:\\path\\to\\release.keystore"
+export KEY_STORE_PASSWORD=...
+export KEY_ALIAS=...
+export KEY_PASSWORD=...
+cd android
+gradle assembleRelease
+# 产物: android/app/build/outputs/apk/release/app-release.apk
+
+# 校验签名
+"$ANDROID_HOME/build-tools/36.1.0/apksigner.bat" verify --print-certs \
+  app/build/outputs/apk/release/app-release.apk
+```
+
+坑：`signingConfigs` 块必须写在 `buildTypes` **之前**。Gradle KTS 的 DSL 按书写顺序执行，写在后面时 `signingConfigs.getByName("release")` 取到的是空配置，`packageRelease` 会静默产出 `app-release-unsigned.apk`。环境变量缺失时 release 会构建失败（`SigningConfig "release" is missing required property "storeFile"`），debug 不受影响。
+
+签名密钥与 debug 密钥不同，真机上装 release 包需要先卸载 debug 包，SAF 目录授权会随之丢失，需重新选择游戏目录。
+
 ## 项目结构（Android 部分）
 
 ```

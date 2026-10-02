@@ -15,18 +15,8 @@ android {
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
-    buildTypes {
-        debug {
-            isMinifyEnabled = false
-        }
-        release {
-            isMinifyEnabled = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            ndk { abiFilters += listOf("arm64-v8a") }
-            signingConfig = signingConfigs.findByName("release")
-        }
-    }
-
+    // Declared before buildTypes on purpose: the DSL runs in order, so a
+    // signingConfigs lookup from buildTypes would otherwise see null.
     signingConfigs {
         create("release") {
             val ks = System.getenv("KEY_STORE")
@@ -39,6 +29,18 @@ android {
                 keyAlias = alias
                 keyPassword = keyPwd
             }
+        }
+    }
+
+    buildTypes {
+        debug {
+            isMinifyEnabled = false
+        }
+        release {
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            ndk { abiFilters += listOf("arm64-v8a") }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
