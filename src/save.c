@@ -592,8 +592,10 @@ void SaveGameOnDisk(u8 which_save) {
     // stub: writing out to a temporary file for encryption
 
     FILE* fp = fopen(filename, "wb");
-    fwrite(encoded->data, encoded->len, 1, fp);
-    fclose(fp);
+    if (fp) {
+        fwrite(encoded->data, encoded->len, 1, fp);
+        fclose(fp);
+    }
 
     free(raw);
     free(compressed);

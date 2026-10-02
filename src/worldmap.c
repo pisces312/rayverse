@@ -1,5 +1,11 @@
 
 // NOTE: unsure about the source filename
+#ifdef ANDROID
+#include <android/log.h>
+#define WDBG(...) __android_log_print(ANDROID_LOG_INFO, "Rayverse-DBG", __VA_ARGS__)
+#else
+#define WDBG(...) ((void)0)
+#endif
 
 //67860
 void TEST_DISPLAY_PTS_WAY(s16 world, s16 connected_world, s16 xpos, s16 ypos) {
@@ -320,6 +326,14 @@ void INIT_CHEMIN(void) {
     set_zoom_mode(0);
     chemin_percent = 0;
     Nb_total_cages = 0;
+#ifdef ANDROID
+    for (s32 dbg = 0; dbg < 25; ++dbg) {
+        WDBG("INIT_CHEMIN pre  mapobj[%d].animations=%p sprites=%p eta=%p anim_count=%d main=%d sub=%d",
+             dbg, (void*)mapobj[dbg].animations, (void*)mapobj[dbg].sprites,
+             (void*)mapobj[dbg].eta, mapobj[dbg].anim_count,
+             mapobj[dbg].init_main_etat, mapobj[dbg].init_sub_etat);
+    }
+#endif
     for (s32 i = 0; i < 24; ++i) {
         obj_t* medaillon = mapobj + i;
         world_info_t* world_info = t_world_info + i;
@@ -351,6 +365,15 @@ void INIT_CHEMIN(void) {
         obj_init(medaillon);
         CalcObjPosInWorldMap(medaillon);
         medaillon->anim_frame = i % medaillon->animations[get_eta(medaillon)->anim_index].frames_count;
+#ifdef ANDROID
+        {
+            eta_t* e = get_eta(medaillon);
+            WDBG("MED[%d] initM=%d initS=%d -> main=%d sub=%d anim_index=%d etaAnim=%d etaNext=(%d,%d) etaPtr=%p",
+                 i, medaillon->init_main_etat, medaillon->init_sub_etat,
+                 medaillon->main_etat, medaillon->sub_etat, medaillon->anim_index,
+                 e->anim_index, e->next_main_etat, e->next_sub_etat, (void*)e);
+        }
+#endif
     }
 
     // unlock Mr Dark's Dare
@@ -591,7 +614,7 @@ void INIT_NEW_GAME(void) {
     INIT_RAY_BEGIN();
     u8 first_world_is_accessible_flag = (t_world_info[0].state | 1);
     for (s32 i = 0; i < 24; ++i) {
-        world_info_t* world_info = t_world_info + 1;
+        world_info_t* world_info = t_world_info + i;
         world_info->nb_cages = 0;
         world_info->state &= ~7;
     }
