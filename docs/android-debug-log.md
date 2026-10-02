@@ -76,6 +76,7 @@
 | 构建"过快" | gradle 2-3 秒完成，怀疑没重编 | 核对产物 mtime，或 `find android/app/build -name "*.so" -newer src/common.h` |
 | Gradle 缓存 | 改 `Android.mk` 后不生效 | 删 `app/build` + `app/.cxx` + `.gradle` 重来 |
 | `adb shell input keyevent` 驱动游戏 | 按键日志显示 down/up 只差 1 ms，引擎按 60 Hz 轮询 `Touche_Enfoncee`，经常一整帧都采不到 | 用 `input keyevent --longpress <code>`（按住 ~500 ms），每步截图确认；YES/NO 弹窗里"红色"才是当前选中项，需先用左/右切换 |
+| 注入按键走到存档选择页就失效 | `CHOOSE A GAME` 页上 `key sc=40 down/up` 日志齐全，但画面不动；人手点 START 正常 | 未定位（怀疑与该页的 `button_released`/时序判定有关），自动化到此交回真人试玩 |
 
 ## 8. 抓日志的标准做法
 

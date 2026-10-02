@@ -8,8 +8,8 @@
 
 ## 当前状态 / Status
 
-- 已在真机（Android 13 / arm64）验证：片头动画、世界地图、第 1 关可正常游玩，退出后再次进入正常。
-- Verified on a real device (Android 13 / arm64): intro, world map and level 1 are playable; quitting and relaunching works.
+- 已在真机（Samsung Galaxy S20 / Android 13 / arm64）验证：片头动画、世界地图、第 1 关可正常游玩，退出后再次进入正常。本 release 包（R8 混淆 + 符号剥离）已在同一台机器上手动试玩通过。
+- Verified on a real device (Samsung Galaxy S20 / Android 13 / arm64): intro, world map and level 1 are playable, and quitting then relaunching works. This release APK (R8 + stripped) was itself play-tested on that device.
 - 后续关卡尚未逐一过机，进度以通关原版为准 / Later levels have not been play-tested one by one yet.
 
 ## 安装 / Installation
@@ -58,7 +58,6 @@ A virtual gamepad is drawn on screen; tap the gear in the top-right corner to en
 ## 已知限制 / Known limitations
 
 - 仅编译 arm64；x86_64 模拟器和 32 位设备不可用 / arm64 only.
-- 上面的验证是在同源码的 debug 包上做的；本 release 包经过 R8 混淆与符号剥离，尚未真机试玩 / The testing above was done on a debug build of the same source — this release APK goes through R8 and symbol stripping and has not been play-tested yet.
 - 暂停（Ctrl+NumLock）、取消（Tab）、全屏（F11）暂未提供虚拟按键 / No virtual keys for pause, cancel or fullscreen yet.
 - 退出游戏后进程会结束（引擎的内存池是一次性的），再次点图标会重新加载，约 1 秒 / The process exits when you quit; relaunching reloads the engine (~1 s).
 - 切后台/旋转已锁定横竖屏信箱化，个别机型比例可能略有黑边 / Letterboxing is fixed to the original 320:200 aspect; some devices may show slightly larger bars.
