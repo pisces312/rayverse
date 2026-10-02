@@ -16,7 +16,9 @@ typedef unsigned char bool;
 
 typedef int bool32;
 typedef unsigned char u8;
-typedef char s8;
+// 'char' is unsigned by default on AArch64 (Android/ARM), which breaks every signed
+// 8-bit field read from game data (e.g. eta_t.speed_x_left). Ask for signed explicitly.
+typedef signed char s8;
 typedef unsigned short u16;
 typedef short s16;
 typedef unsigned int u32;

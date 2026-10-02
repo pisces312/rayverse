@@ -1,5 +1,12 @@
 
 
+#ifdef ANDROID
+#include <android/log.h>
+#define KDBG(...) __android_log_print(ANDROID_LOG_INFO, "Rayverse-DBG", __VA_ARGS__)
+#else
+#define KDBG(...) ((void)0)
+#endif
+
 s64 get_clock(void) {
     struct timespec t = {0};
     clock_gettime(CLOCK_MONOTONIC, &t);
@@ -56,9 +63,18 @@ void linux_process_keyboard_event(SDL_Scancode scancode, bool is_down) {
             SC_RSHIFT, SC_ALT, 0, 0,
     };
 
+#ifdef ANDROID
+    // Alt and Enter are both virtual gamepad buttons here, so only F11 toggles fullscreen.
+    if (is_down && scancode == SDL_SCANCODE_F11) {
+#else
     if (is_down && ((scancode == SDL_SCANCODE_RETURN && Touche_Enfoncee[SC_ALT]) || scancode == SDL_SCANCODE_F11)) {
+#endif
         toggle_fullscreen(global_app_state.sdl.window);
     } else {
+        KDBG("key sc=%d %s", (int)scancode, is_down ? "down" : "up");
+        if (scancode >= 0x100) {
+            return; // SDL_SCANCODE_* beyond the DOS table (AC_*, MEDIA_*, modifier GUI keys) have no DOS equivalent
+        }
         u8 dos_scancode = sdl_scancode_to_dos_scancode[scancode & 0xFF];
         if (!is_down) {
             dos_scancode |= 0x80;

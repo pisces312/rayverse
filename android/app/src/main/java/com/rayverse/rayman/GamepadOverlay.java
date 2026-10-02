@@ -32,11 +32,12 @@ public class GamepadOverlay extends View {
     private static final int BTN_DOWN = 1;
     private static final int BTN_LEFT = 2;
     private static final int BTN_RIGHT = 3;
-    private static final int BTN_A = 4;     /* Jump */
-    private static final int BTN_B = 5;     /* Attack/Fist */
-    private static final int BTN_X = 6;     /* Grab/Helicopter */
-    private static final int BTN_Y = 7;     /* Run toggle */
-    private static final int BTN_COUNT = 8;
+    private static final int BTN_A = 4;     /* Jump (DOS Ctrl) */
+    private static final int BTN_B = 5;     /* Punch (DOS Alt) */
+    private static final int BTN_X = 6;     /* Grab / hang (DOS X) */
+    private static final int BTN_Y = 7;     /* Confirm (DOS Enter) */
+    private static final int BTN_MENU = 8;  /* Options menu / back (DOS Escape) */
+    private static final int BTN_COUNT = 9;
 
     /* SDL key mappings for each button */
     private static final int[] KEY_CODES = {
@@ -44,15 +45,16 @@ public class GamepadOverlay extends View {
         KeyEvent.KEYCODE_DPAD_DOWN,
         KeyEvent.KEYCODE_DPAD_LEFT,
         KeyEvent.KEYCODE_DPAD_RIGHT,
-        KeyEvent.KEYCODE_SPACE,      /* A - Jump */
-        KeyEvent.KEYCODE_SHIFT_LEFT, /* B - Attack */
-        KeyEvent.KEYCODE_ESCAPE,     /* X - Grab */
-        KeyEvent.KEYCODE_TAB,        /* Y - Run toggle */
+        KeyEvent.KEYCODE_CTRL_LEFT,   /* A - Jump */
+        KeyEvent.KEYCODE_ALT_LEFT,     /* B - Punch */
+        KeyEvent.KEYCODE_X,            /* X - Grab */
+        KeyEvent.KEYCODE_ENTER,        /* Y - Confirm */
+        KeyEvent.KEYCODE_ESCAPE,       /* M - Menu / back */
     };
 
     private static final String[] LABELS = {
         "▲", "▼", "◀", "▶",
-        "A", "B", "X", "Y",
+        "J", "P", "G", "OK", "M",
     };
 
     /* Logical game resolution aspect (320x200) for portrait letterboxing. */
@@ -173,19 +175,25 @@ public class GamepadOverlay extends View {
     private void loadCustomLayout() {
         SharedPreferences prefs = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         hasCustomLayout = false;
+        boolean[] present = new boolean[BTN_COUNT];
         for (int i = 0; i < BTN_COUNT; i++) {
             String kx = KEY_BTN_X + i;
             String ky = KEY_BTN_Y + i;
             String ks = KEY_BTN_SIZE + i;
-            if (prefs.contains(kx) && prefs.contains(ky) && prefs.contains(ks)) {
+            present[i] = prefs.contains(kx) && prefs.contains(ky) && prefs.contains(ks);
+            if (present[i]) {
                 customCx[i] = prefs.getFloat(kx, 0.5f);
                 customCy[i] = prefs.getFloat(ky, 0.5f);
                 customSize[i] = prefs.getFloat(ks, 0.1f);
-                hasCustomLayout = true;
             } else {
                 customCx[i] = customCy[i] = customSize[i] = 0f;
             }
         }
+        /* A layout saved before a button was added is incomplete; use defaults instead. */
+        for (int i = 0; i < BTN_COUNT; i++) {
+            if (!present[i]) return;
+        }
+        hasCustomLayout = true;
     }
 
     private void saveCustomLayout() {
@@ -265,6 +273,7 @@ public class GamepadOverlay extends View {
         hitAreas[BTN_B] = rect(actCenterX + pad,           actCenterY - btnSize/2, actCenterX + btnSize + pad, actCenterY + btnSize/2);
         hitAreas[BTN_X] = rect(actCenterX - btnSize - pad, actCenterY - btnSize/2, actCenterX - pad,           actCenterY + btnSize/2);
         hitAreas[BTN_Y] = rect(actCenterX - btnSize/2,     actCenterY + pad,       actCenterX + btnSize/2,     actCenterY + btnSize + pad);
+        setButtonRect(BTN_MENU, (int) (w * 0.50f), actCenterY, btnSize * 3 / 4);
     }
 
     /*
@@ -289,6 +298,7 @@ public class GamepadOverlay extends View {
         hitAreas[BTN_B] = rect(actCenterX + pad,           centerY - btnSize/2, actCenterX + btnSize + pad, centerY + btnSize/2);
         hitAreas[BTN_X] = rect(actCenterX - btnSize - pad, centerY - btnSize/2, actCenterX - pad,           centerY + btnSize/2);
         hitAreas[BTN_Y] = rect(actCenterX - btnSize/2,     centerY + pad,       actCenterX + btnSize/2,     centerY + btnSize + pad);
+        setButtonRect(BTN_MENU, (int) (w * 0.50f), centerY, btnSize * 3 / 4);
     }
 
     private void layoutSettingsButton(int w, int h) {

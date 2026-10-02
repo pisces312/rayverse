@@ -1,3 +1,10 @@
+#ifdef ANDROID
+#include <android/log.h>
+#define RDBG(...) __android_log_print(ANDROID_LOG_INFO, "Rayverse-DBG", __VA_ARGS__)
+static u32 ray_dbg_ctr;
+#else
+#define RDBG(...) ((void)0)
+#endif
 
 //6BFD0
 void allocateRayLandingSmoke(void) {
@@ -651,6 +658,16 @@ void RAY_SWIP(void) {
     if (ray.main_etat == 1 && (ray.sub_etat == 9 || ray.sub_etat == 48 || ray.sub_etat == 11)) {
         ray.speed_x = -ray.speed_x;
     }
+#ifdef ANDROID
+    if ((leftjoy() || rightjoy()) && (ray_dbg_ctr++ % 6) == 0) {
+        eta_t* dbg_eta = get_eta(&ray);
+        RDBG("RAY me=%d se=%d flip=%d spd=%d etaL=%d etaR=%d anim=%d L=%d R=%d poelle=%d fee=%d rev=%d run=%d frun=%d",
+             ray.main_etat, ray.sub_etat, ray.flags.flip_x, ray.speed_x,
+             dbg_eta->speed_x_left, dbg_eta->speed_x_right, ray.anim_index,
+             leftjoy(), rightjoy(), (int) ray_on_poelle, (int) ray_in_fee_zone,
+             RayEvts.reverse, RayEvts.run, RayEvts.force_run);
+    }
+#endif
     temp_v0 = ashl16((s16) ray.speed_x, 4);
     temp_a2 = temp_v0;
     if (ray.speed_x != 0) {
