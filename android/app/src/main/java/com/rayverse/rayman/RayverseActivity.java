@@ -4,7 +4,6 @@ import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.os.Bundle;
-import android.util.Log;
 import android.widget.FrameLayout;
 import org.libsdl.app.SDLActivity;
 
@@ -30,7 +29,7 @@ public class RayverseActivity extends SDLActivity {
 
         GameDataBridge dataBridge = new GameDataBridge(this);
         if (!dataBridge.loadSavedUri()) {
-            Log.e(TAG, "No saved URI, finishing");
+            RayLog.e(TAG, "No saved URI, finishing");
             finish();
             return;
         }
@@ -38,14 +37,14 @@ public class RayverseActivity extends SDLActivity {
         /* Re-scan SAF and open fds (native libs are now loaded by SDL) */
         GameDataBridge.ScanResult result = dataBridge.scanAndStore();
         if (!result.isComplete()) {
-            Log.e(TAG, "Missing required files: " + result.missingRequired);
+            RayLog.e(TAG, "Missing required files: " + result.missingRequired);
             finish();
             return;
         }
 
         /* Register all fds with native code */
         dataBridge.registerWithNative();
-        Log.i(TAG, "Game data OK (" + result.found.size() + " files), SDL running");
+        RayLog.i(TAG, "Game data OK (" + result.found.size() + " files), SDL running");
 
         /* Attach gamepad overlay */
         if (mLayout != null) {
@@ -111,7 +110,7 @@ public class RayverseActivity extends SDLActivity {
         int req = "portrait".equals(o)
                 ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
-        Log.v(TAG, "Forcing orientation to " + o + " (req=" + req + ")");
+        RayLog.v(TAG, "Forcing orientation to " + o + " (req=" + req + ")");
         setRequestedOrientation(req);
     }
 
@@ -124,7 +123,7 @@ public class RayverseActivity extends SDLActivity {
          * (Killing it while the activity is still resumed makes ActivityManager
          * relaunch the task, which looks like the game restarting itself.) */
         if (isFinishing()) {
-            Log.i(TAG, "Game over, ending process");
+            RayLog.i(TAG, "Game over, ending process");
             android.os.Process.killProcess(android.os.Process.myPid());
             System.exit(0);
         }

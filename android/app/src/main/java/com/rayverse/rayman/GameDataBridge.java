@@ -8,7 +8,6 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
-import android.util.Log;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -83,7 +82,7 @@ public class GameDataBridge {
         int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
         resolver.takePersistableUriPermission(uri, flags);
         getPrefs().edit().putString(KEY_TREE_URI, uri.toString()).apply();
-        Log.i(TAG, "Saved tree URI: " + uri);
+        RayLog.i(TAG, "Saved tree URI: " + uri);
     }
 
     /**
@@ -100,7 +99,7 @@ public class GameDataBridge {
         }
 
         String rootDocId = DocumentsContract.getTreeDocumentId(treeUri);
-        Log.i(TAG, "Starting recursive scan, rootDocId=" + rootDocId);
+        RayLog.i(TAG, "Starting recursive scan, rootDocId=" + rootDocId);
         scanDir(rootDocId, "", result);
 
         for (String r : REQUIRED_FILES) {
@@ -117,7 +116,7 @@ public class GameDataBridge {
         result.musicTracks = musicCount;
         result.hasMusicDir = musicCount > 0;
 
-        Log.i(TAG, "Scan complete: " + result.found.size() + " found, "
+        RayLog.i(TAG, "Scan complete: " + result.found.size() + " found, "
                 + result.missingRequired.size() + " missing required, "
                 + pendingFds.size() + " fds pending");
         return result;
@@ -135,7 +134,7 @@ public class GameDataBridge {
         for (FdEntry entry : pendingFds) {
             nativeRegisterFd(entry.path, entry.fd, entry.mode);
         }
-        Log.i(TAG, "Registered " + pendingFds.size() + " fds with native");
+        RayLog.i(TAG, "Registered " + pendingFds.size() + " fds with native");
 
         String gamePath = treeUri.getPath();
         if (gamePath != null) {
@@ -177,15 +176,15 @@ public class GameDataBridge {
                             int fd = pfd.detachFd();
                             pendingFds.add(new FdEntry(relPath, fd, 0));
                             result.found.add(relPath);
-                            Log.i(TAG, "Opened fd " + fd + " for " + relPath);
+                            RayLog.i(TAG, "Opened fd " + fd + " for " + relPath);
                         }
                     } catch (Exception e) {
-                        Log.e(TAG, "Failed to open " + relPath, e);
+                        RayLog.e(TAG, "Failed to open " + relPath, e);
                     }
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "scanDir failed for " + relPrefix, e);
+            RayLog.e(TAG, "scanDir failed for " + relPrefix, e);
         }
     }
 

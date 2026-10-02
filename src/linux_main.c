@@ -1,8 +1,8 @@
 
 
 #ifdef ANDROID
-#include <android/log.h>
-#define KDBG(...) __android_log_print(ANDROID_LOG_INFO, "Rayverse-DBG", __VA_ARGS__)
+#include "ray_log.h"
+#define KDBG(...) RAY_LOG("Rayverse-DBG", ANDROID_LOG_INFO, __VA_ARGS__)
 #else
 #define KDBG(...) ((void)0)
 #endif

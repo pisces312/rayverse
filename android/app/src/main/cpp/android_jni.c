@@ -12,7 +12,7 @@
 #ifdef ANDROID
 
 #include <jni.h>
-#include <android/log.h>
+#include "ray_log.h"
 #include <SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,8 +21,8 @@
 #include <sys/stat.h>
 
 #define LOG_TAG "Rayverse"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#define LOGI(...) RAY_LOG(LOG_TAG, ANDROID_LOG_INFO, __VA_ARGS__)
+#define LOGE(...) RAY_LOG(LOG_TAG, ANDROID_LOG_ERROR, __VA_ARGS__)
 
 /* ---- SAF fd table ---- */
 

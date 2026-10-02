@@ -24,6 +24,6 @@ LOCAL_SRC_FILES := $(GAME_SRC)/rayverse.c $(LOCAL_PATH)/android_jni.c $(LOCAL_PA
 
 LOCAL_CFLAGS += -std=gnu99 -D_GNU_SOURCE=1 -DANDROID=1 -Wall -Wno-unused-parameter -Wno-sign-compare -Wno-unused-variable -Wno-unused-function -Wno-missing-declarations -Wno-implicit-function-declaration
 LOCAL_SHARED_LIBRARIES := SDL2
-LOCAL_LDLIBS := -lGLESv1_CM -lGLESv2 -lOpenSLES -llog -landroid
+LOCAL_LDLIBS := -lGLESv1_CM -lGLESv2 -lOpenSLES -llog -landroid -ldl
 
 include $(BUILD_SHARED_LIBRARY)

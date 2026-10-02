@@ -1,6 +1,6 @@
 #ifdef ANDROID
-#include <android/log.h>
-#define RDBG(...) __android_log_print(ANDROID_LOG_INFO, "Rayverse-DBG", __VA_ARGS__)
+#include "ray_log.h"
+#define RDBG(...) RAY_LOG("Rayverse-DBG", ANDROID_LOG_INFO, __VA_ARGS__)
 static u32 ray_dbg_ctr;
 #else
 #define RDBG(...) ((void)0)

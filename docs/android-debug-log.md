@@ -80,16 +80,33 @@
 
 ## 8. 抓日志的标准做法
 
+日志级别是**运行时可配**的：debug 包默认全开，release 包默认只留 ERROR 以上。想在 release 包里看细节，先按 tag 打开再重启应用：
+
+```bash
+adb shell setprop log.tag.Rayverse-DBG VERBOSE   # 也可 DEBUG / INFO / WARN / ERROR
+adb shell am force-stop com.rayverse.rayman      # 关掉再进，级别按进程缓存
+```
+
+属性删不掉（`setprop … ""` 会报 usage），要恢复默认就设回 `ERROR`，或者重启设备。
+
 ```bash
 # 只取相关 tag，落盘后台跟踪
 adb logcat -v time Rayverse:V Rayverse-DBG:V Rayverse-GL:V Rayverse-IO:V \
-  Rayverse-SAF:V Rayverse-Setup:V SDL:V stdout:V stderr:V libc:F DEBUG:E AndroidRuntime:E '*:S' \
+  GameDataBridge:V Rayverse-Setup:V SDL:V stdout:V stderr:V libc:F DEBUG:E AndroidRuntime:E '*:S' \
   > android/run.log 2>&1 &
 
 # 关键日志标记
-# Rayverse-DBG  键事件 key sc=… / 奖章 WDBG / ALLFIX LDBG / 移动状态 RDBG
-# Rayverse-IO   fopen SAF hit / fd 注册
-# Rayverse-SAF  Java 侧扫描（注意 GameDataBridge 这个 tag 默认不在过滤列表里）
+# Rayverse-DBG   键事件 key sc=… / 奖章 WDBG / ALLFIX LDBG / 移动状态 RDBG
+# Rayverse-IO    fopen SAF hit
+# Rayverse       JNI 侧 fd 注册、SAF URI（Java 的 RayverseActivity 也用这个 tag）
+# GameDataBridge Java 侧目录扫描 + 每个文件的 Opened fd
+# Rayverse-GL    GL 上下文/着色器信息（失败行是 ERROR，release 里也能看到）
 ```
+
+实现位置：
+
+- 原生 `src/ray_log.h`：`RAY_LOG(tag, level, …)` → `__android_log_is_loggable(level, tag, RAY_LOG_DEFAULT)`。该函数 API 30 才有，而 minSdk 是 21，所以用 `dlsym(RTLD_DEFAULT, …)` 取；取不到（API 21-29）时退化成只比较编译期默认值。
+- Java `RayLog.java`：release 下用 `Log.isLoggable(tag, Log.DEBUG)` 判断是否打开。**不能问 INFO 档** —— 属性未设置时 `isLoggable` 的内置默认就是 INFO，会一直返回 true，release 就静默不下来。副作用：Java 侧只认 DEBUG/VERBOSE 两个开关值，设成 INFO 不放开 `RayLog.i/v`（`RayLog.e` 始终输出）。
+- 默认阈值由 `app/build.gradle.kts` 的各 buildType 注入：debug `-DRAY_LOG_DEFAULT=ANDROID_LOG_VERBOSE`，release `-DRAY_LOG_DEFAULT=ANDROID_LOG_ERROR`。
 
 定位原则：**先用日志确认事件是否到达、值是多少，再改代码**。第 3 条就是靠一行状态日志把"按键映射问题"直接翻案成类型定义问题，否则会一路在映射表里找不存在的 bug。

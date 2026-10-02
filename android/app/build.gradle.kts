@@ -50,13 +50,28 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
+            externalNativeBuild {
+                ndkBuild {
+                    cFlags("-DRAY_LOG_DEFAULT=ANDROID_LOG_VERBOSE")
+                }
+            }
         }
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             ndk { abiFilters += listOf("arm64-v8a") }
             signingConfig = signingConfigs.getByName("release")
+            externalNativeBuild {
+                ndkBuild {
+                    // Only ERROR and above reach logcat unless the tag is switched on
+                    cFlags("-DRAY_LOG_DEFAULT=ANDROID_LOG_ERROR")
+                }
+            }
         }
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     externalNativeBuild {

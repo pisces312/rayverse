@@ -1,8 +1,8 @@
 
 //44DE0
 #ifdef ANDROID
-#include <android/log.h>
-#define LDBG(...) __android_log_print(ANDROID_LOG_INFO, "Rayverse-DBG", __VA_ARGS__)
+#include "ray_log.h"
+#define LDBG(...) RAY_LOG("Rayverse-DBG", ANDROID_LOG_INFO, __VA_ARGS__)
 #else
 #define LDBG(...) ((void)0)
 #endif

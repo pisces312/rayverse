@@ -1,7 +1,8 @@
 
 #ifdef ANDROID
-#include <android/log.h>
-#define RAYGL_LOGI(...) __android_log_print(ANDROID_LOG_INFO, "Rayverse-GL", __VA_ARGS__)
+#include "ray_log.h"
+#define RAYGL_LOGI(...) RAY_LOG("Rayverse-GL", ANDROID_LOG_INFO, __VA_ARGS__)
+#define RAYGL_LOGE(...) RAY_LOG("Rayverse-GL", ANDROID_LOG_ERROR, __VA_ARGS__)
 #endif
 
 typedef struct basic_shader_t {
@@ -85,7 +86,7 @@ void load_shader(u32 shader, const char* shader_source) {
         printf("Error: compilation of shader %d failed:\n%s", shader, info_log);
         printf("Shader source: %s\n", shader_source);
 #ifdef ANDROID
-        RAYGL_LOGI("shader %d compile FAILED: %s", shader, info_log);
+        RAYGL_LOGE("shader %d compile FAILED: %s", shader, info_log);
 #endif
     }
 }
@@ -111,7 +112,7 @@ u32 load_basic_shader_program(const char* vert_source, const char* frag_source) 
             glGetProgramInfoLog(shader_program, sizeof(info_log), NULL, info_log);
             printf("Error: shader linking failed: %s", info_log);
 #ifdef ANDROID
-            RAYGL_LOGI("shader LINK FAILED: %s", info_log);
+            RAYGL_LOGE("shader LINK FAILED: %s", info_log);
 #endif
             fatal_error();
         }
@@ -175,7 +176,7 @@ bool linux_init_opengl(app_state_t* app_state) {
     SDL_GLContext gl_context = SDL_GL_CreateContext(app_state->sdl.window);
 #ifdef ANDROID
     if (!gl_context) {
-        RAYGL_LOGI("SDL_GL_CreateContext FAILED: %s", SDL_GetError());
+        RAYGL_LOGE("SDL_GL_CreateContext FAILED: %s", SDL_GetError());
     }
 #endif
     SDL_GL_MakeCurrent(app_state->sdl.window, gl_context);

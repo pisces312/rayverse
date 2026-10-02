@@ -1,8 +1,8 @@
 
 // NOTE: unsure about the source filename
 #ifdef ANDROID
-#include <android/log.h>
-#define WDBG(...) __android_log_print(ANDROID_LOG_INFO, "Rayverse-DBG", __VA_ARGS__)
+#include "ray_log.h"
+#define WDBG(...) RAY_LOG("Rayverse-DBG", ANDROID_LOG_INFO, __VA_ARGS__)
 #else
 #define WDBG(...) ((void)0)
 #endif

@@ -51,6 +51,8 @@ gradle assembleRelease
 
 签名密钥与 debug 密钥不同，真机上装 release 包需要先卸载 debug 包，SAF 目录授权会随之丢失，需重新选择游戏目录。
 
+release 包的日志默认只保留 ERROR 级以上（debug 包全开），阈值由各 buildType 注入的 `-DRAY_LOG_DEFAULT` 决定。给远程反馈取证时先 `adb shell setprop log.tag.Rayverse-DBG VERBOSE` 再重启应用，细节见 `android-debug-log.md` 第 8 节。
+
 ## 项目结构（Android 部分）
 
 ```
