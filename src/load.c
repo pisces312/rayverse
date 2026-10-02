@@ -561,11 +561,6 @@ void LOAD_ALL_FIX(void) {
 
         mem_read(&nb_des, mem, 2);
         nb_fix_des = nb_des;
-        // Fixed sprite groups that share an ETA table also share one animation
-        // table: the first group referencing a given ETA carries that table
-        // (anim_count > 0); later groups referencing the same ETA ship with
-        // anim_count == 0 and must inherit it. Track the owner per ETA group.
-        obj_t* eta_anim_owner[256] = {0};
         s32 des_index = 1; // apparently 0 gets skipped?
         for (; des_index < nb_des; ++des_index) {
 
@@ -628,19 +623,6 @@ void LOAD_ALL_FIX(void) {
                         mem_read(anim_desc->frames, mem, anim_desc->frames_count * sizeof(anim_frame_t));
                     }
                 }
-                if (which_eta >= 0 && which_eta < 256) {
-                    eta_anim_owner[which_eta] = obj;
-                }
-            } else if (which_eta >= 0 && which_eta < 256 && eta_anim_owner[which_eta] != NULL) {
-                // Shares an ETA table (and therefore the animation table) with
-                // an earlier fixed group that already loaded its animations.
-                obj_t* owner = eta_anim_owner[which_eta];
-                obj->animations = owner->animations;
-                obj->anim_count = owner->anim_count;
-#ifdef ANDROID
-                LDBG("ALLFIX des[%d] inherits %d animations from eta-group %d owner",
-                     des_index, obj->anim_count, which_eta);
-#endif
             }
         }
         mem_read(&RaymanExeCheckSum3, mem, 4);
@@ -659,6 +641,9 @@ void LOAD_ALL_FIX(void) {
         alpha2_sprite_count = alpha2->nb_sprites;
 
         mem_read(&des_index, mem, 4);
+        alpha_numbers = wldobj + des_index;
+
+        mem_read(&des_index, mem, 4);
         obj_t* obj = wldobj + des_index;
         raylittle.sprites = obj->sprites;
         raylittle.img_buffer = obj->img_buffer;
@@ -667,8 +652,9 @@ void LOAD_ALL_FIX(void) {
         mem_read(&des_index, mem, 4);
         obj = wldobj + des_index;
 #ifdef ANDROID
-        LDBG("ALLFIX MAPOBJ template des_index=%d animc=%d animations=%p cursor=%d/%d",
-             des_index, obj->anim_count, (void*)obj->animations, mem->cursor, mem->len);
+        LDBG("ALLFIX MAPOBJ group=%d animc=%d animations=%p eta=%p cursor=%d/%d",
+             des_index, obj->anim_count, (void*)obj->animations, (void*)obj->eta,
+             mem->cursor, mem->len);
 #endif
         for (s32 i = 0; i < 25; ++i) {
             obj_t* m = mapobj + i;
@@ -679,11 +665,6 @@ void LOAD_ALL_FIX(void) {
             m->anim_count = obj->anim_count;
             m->eta = obj->eta;
         }
-#ifdef ANDROID
-        LDBG("LOAD_ALL_FIX template des_index anim_count=%d animations=%p sprites=%p eta=%p; mapobj[0].anim=%p mapobj[3].anim=%p mapobj[24].anim=%p",
-             obj->anim_count, (void*)obj->animations, (void*)obj->sprites, (void*)obj->eta,
-             (void*)mapobj[0].animations, (void*)mapobj[3].animations, (void*)mapobj[24].animations);
-#endif
 
         mem_read(&des_index, mem, 4);
         clockobj = wldobj[des_index];

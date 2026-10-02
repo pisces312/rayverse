@@ -326,14 +326,6 @@ void INIT_CHEMIN(void) {
     set_zoom_mode(0);
     chemin_percent = 0;
     Nb_total_cages = 0;
-#ifdef ANDROID
-    for (s32 dbg = 0; dbg < 25; ++dbg) {
-        WDBG("INIT_CHEMIN pre  mapobj[%d].animations=%p sprites=%p eta=%p anim_count=%d main=%d sub=%d",
-             dbg, (void*)mapobj[dbg].animations, (void*)mapobj[dbg].sprites,
-             (void*)mapobj[dbg].eta, mapobj[dbg].anim_count,
-             mapobj[dbg].init_main_etat, mapobj[dbg].init_sub_etat);
-    }
-#endif
     for (s32 i = 0; i < 24; ++i) {
         obj_t* medaillon = mapobj + i;
         world_info_t* world_info = t_world_info + i;
