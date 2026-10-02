@@ -15,3 +15,9 @@ local.properties
 *.apk
 *.aab
 captures/
+
+# Debug scratch (top level of android/ only - res/ icons must stay tracked)
+/*.log
+/*.png
+/*.DAT
+/_scratch/
