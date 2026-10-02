@@ -2,6 +2,23 @@ plugins {
     id("com.android.application")
 }
 
+// Release signing material lives only in the environment - never in this repo,
+// and never behind a default value: a release build without it must fail.
+val signingEnv = mapOf(
+    "KEY_STORE" to System.getenv("KEY_STORE"),
+    "KEY_STORE_PASSWORD" to System.getenv("KEY_STORE_PASSWORD"),
+    "KEY_ALIAS" to System.getenv("KEY_ALIAS"),
+    "KEY_PASSWORD" to System.getenv("KEY_PASSWORD"),
+)
+val missingSigningEnv = signingEnv.filterValues { it.isNullOrEmpty() }.keys
+if (missingSigningEnv.isNotEmpty() &&
+    gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }) {
+    throw GradleException(
+        "Release builds read the keystore from the environment. Missing: " +
+            missingSigningEnv.joinToString() + ". Use assembleDebug if no signing is needed."
+    )
+}
+
 android {
     namespace = "com.rayverse.rayman"
     compileSdk = 36
@@ -19,15 +36,13 @@ android {
     // signingConfigs lookup from buildTypes would otherwise see null.
     signingConfigs {
         create("release") {
-            val ks = System.getenv("KEY_STORE")
-            val ksPwd = System.getenv("KEY_STORE_PASSWORD")
-            val alias = System.getenv("KEY_ALIAS")
-            val keyPwd = System.getenv("KEY_PASSWORD")
-            if (ks != null && ksPwd != null && alias != null && keyPwd != null) {
-                storeFile = file(ks)
-                storePassword = ksPwd
-                keyAlias = alias
-                keyPassword = keyPwd
+            // An explicit release task already failed the check above; this only keeps
+            // debug-only builds working while other release tasks still fail in packageRelease.
+            if (missingSigningEnv.isEmpty()) {
+                storeFile = file(signingEnv.getValue("KEY_STORE"))
+                storePassword = signingEnv.getValue("KEY_STORE_PASSWORD")
+                keyAlias = signingEnv.getValue("KEY_ALIAS")
+                keyPassword = signingEnv.getValue("KEY_PASSWORD")
             }
         }
     }

@@ -47,7 +47,7 @@ gradle assembleRelease
   app/build/outputs/apk/release/app-release.apk
 ```
 
-坑：`signingConfigs` 块必须写在 `buildTypes` **之前**。Gradle KTS 的 DSL 按书写顺序执行，写在后面时 `signingConfigs.getByName("release")` 取到的是空配置，`packageRelease` 会静默产出 `app-release-unsigned.apk`。环境变量缺失时 release 会构建失败（`SigningConfig "release" is missing required property "storeFile"`），debug 不受影响。
+坑：`signingConfigs` 块必须写在 `buildTypes` **之前**。Gradle KTS 的 DSL 按书写顺序执行，写在后面时 `signingConfigs.getByName("release")` 取到的是空配置，`packageRelease` 会静默产出 `app-release-unsigned.apk`。环境变量缺失时 `assembleRelease` 在配置阶段就报错并列出缺哪个变量（脚本里不写任何默认值），`assembleDebug` 不受影响。
 
 签名密钥与 debug 密钥不同，真机上装 release 包需要先卸载 debug 包，SAF 目录授权会随之丢失，需重新选择游戏目录。
 
