@@ -49,6 +49,10 @@ android {
 
     buildTypes {
         debug {
+            // Separate applicationId so debug and release installs coexist as two
+            // apps (distinct data dirs, distinct SAF grants). JNI is unaffected:
+            // it binds to the Java package name, not the applicationId.
+            applicationIdSuffix = ".debug"
             isMinifyEnabled = false
             externalNativeBuild {
                 ndkBuild {

@@ -9,9 +9,18 @@ import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 
+import androidx.documentfile.provider.DocumentFile;
+
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Manages SAF-based game data access for Rayverse.
@@ -141,8 +150,7 @@ public class GameDataBridge {
             nativeSetGameDataPath(gamePath, 1);
         }
 
-        File saveDir = new File(context.getFilesDir(), "rayverse_save");
-        saveDir.mkdirs();
+        File saveDir = getSaveDir();
         nativeSetSaveDir(saveDir.getAbsolutePath());
     }
 
@@ -203,15 +211,80 @@ public class GameDataBridge {
         }
     }
 
-    public boolean hasSaveFiles() {
+    public File getSaveDir() {
         File saveDir = new File(context.getFilesDir(), "rayverse_save");
-        if (!saveDir.exists()) return false;
-        String[] files = saveDir.list();
-        if (files == null) return false;
-        for (String f : files) {
-            if (f.endsWith(".SAV") || f.endsWith(".CFG")) return true;
+        saveDir.mkdirs();
+        return saveDir;
+    }
+
+    public static boolean isSaveFileName(String name) {
+        if (name == null) return false;
+        String u = name.toUpperCase(Locale.ROOT);
+        return u.startsWith("RAYMAN") && (u.endsWith(".SAV") || u.endsWith(".CFG"));
+    }
+
+    public List<String> listSaveFiles() {
+        List<String> out = new ArrayList<>();
+        File[] files = getSaveDir().listFiles();
+        if (files == null) return out;
+        for (File f : files) {
+            if (f.isFile() && isSaveFileName(f.getName())) out.add(f.getName());
         }
-        return false;
+        Collections.sort(out);
+        return out;
+    }
+
+    public boolean hasSaveFiles() {
+        return !listSaveFiles().isEmpty();
+    }
+
+    /** Copy all save files into the SAF folder at treeUri. Returns count exported. */
+    public int exportSavesTo(Uri treeUri) {
+        DocumentFile dest = DocumentFile.fromTreeUri(context, treeUri);
+        if (dest == null) return -1;
+        int n = 0;
+        for (String name : listSaveFiles()) {
+            DocumentFile target = dest.findFile(name);
+            if (target == null) target = dest.createFile("application/octet-stream", name);
+            if (target == null) continue;
+            try (InputStream in = new FileInputStream(new File(getSaveDir(), name));
+                 OutputStream out = resolver.openOutputStream(target.getUri(), "wt")) {
+                copy(in, out);
+                n++;
+            } catch (IOException e) {
+                RayLog.e(TAG, "export failed: " + name, e);
+            }
+        }
+        RayLog.i(TAG, "Exported " + n + " save file(s)");
+        return n;
+    }
+
+    /** Copy RAYMAN*.SAV/.CFG from the SAF folder at treeUri into the save dir (overwrite). Returns count imported. */
+    public int importSavesFrom(Uri treeUri) {
+        DocumentFile srcDir = DocumentFile.fromTreeUri(context, treeUri);
+        if (srcDir == null) return -1;
+        int n = 0;
+        for (DocumentFile f : srcDir.listFiles()) {
+            if (!f.isFile()) continue;
+            String name = f.getName();
+            if (!isSaveFileName(name)) continue;
+            try (InputStream in = resolver.openInputStream(f.getUri());
+                 OutputStream out = new FileOutputStream(new File(getSaveDir(), name))) {
+                copy(in, out);
+                n++;
+            } catch (IOException e) {
+                RayLog.e(TAG, "import failed: " + name, e);
+            }
+        }
+        RayLog.i(TAG, "Imported " + n + " save file(s)");
+        return n;
+    }
+
+    private static void copy(InputStream in, OutputStream out) throws IOException {
+        byte[] buf = new byte[8192];
+        int r;
+        while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
+        out.flush();
     }
 
     public static class ScanResult {

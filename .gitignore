@@ -6,6 +6,11 @@ data/
 out/
 Debug/
 Release/
+# Android build-type source sets must stay tracked. The Debug//Release/ rules above
+# (CMake/MSVC output dirs) match case-insensitively on Windows and would otherwise
+# swallow app/src/debug and app/src/release.
+!android/app/src/debug/
+!android/app/src/release/
 game-data/
 .workbuddy/
 *.exe
