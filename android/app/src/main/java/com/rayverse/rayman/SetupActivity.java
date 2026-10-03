@@ -7,17 +7,18 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.util.List;
 
 /**
- * Setup screen for choosing game data directory via SAF.
- * Once data is validated, launches RayverseActivity (SDL).
+ * Setup / home screen.
+ * Landscape-friendly: a centered vertical column of buttons, with all explanatory
+ * text reduced to single short lines and the main hint pinned to the bottom.
  */
 public class SetupActivity extends Activity {
     private static final String TAG = "Rayverse-Setup";
@@ -27,8 +28,8 @@ public class SetupActivity extends Activity {
 
     private GameDataBridge dataBridge;
     private TextView statusText;
+    private TextView saveListText;
     private Button selectButton;
-    private Button startButton;
     private boolean gameLaunched = false;
     private boolean onHome = false;
 
@@ -53,55 +54,127 @@ public class SetupActivity extends Activity {
 
     private void showHomeMenu() {
         onHome = true;
+        saveListText = null;
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(48, 48, 48, 48);
-        root.setBackgroundColor(0xFF1A1A2E);
+        LinearLayout root = newRoot();
 
-        TextView title = new TextView(this);
-        title.setText(getString(R.string.app_name));
-        title.setTextSize(24);
-        title.setTextColor(0xFFE94560);
-        title.setPadding(0, 0, 0, 24);
-        root.addView(title);
+        root.addView(centeredText(getString(R.string.app_name), 18, 0xFFE94560));
 
-        statusText = new TextView(this);
-        statusText.setTextSize(14);
-        statusText.setTextColor(0xFFCCCCCC);
-        statusText.setPadding(0, 0, 0, 24);
+        statusText = centeredText("", 12, 0xFFCCCCCC);
         root.addView(statusText);
+
+        saveListText = centeredText("", 12, 0xFF888888);
+        root.addView(saveListText);
         refreshSaveStatus();
 
-        Button play = new Button(this);
-        play.setText("Play");
-        play.setOnClickListener(v -> launchGame());
-        root.addView(play);
+        addCenteredButton(root, "Play", v -> launchGame());
+        addCenteredButton(root, "Export saves", v -> openTree(REQUEST_EXPORT_TREE));
+        addCenteredButton(root, "Import saves", v -> openTree(REQUEST_IMPORT_TREE));
+        addCenteredButton(root, "Change data folder", v -> openDocumentTree());
+        addCenteredButton(root, "Exit", v -> finish());
 
-        Button exportButton = new Button(this);
-        exportButton.setText("Export saves");
-        exportButton.setOnClickListener(v -> openTree(REQUEST_EXPORT_TREE));
-        root.addView(exportButton);
-
-        Button importButton = new Button(this);
-        importButton.setText("Import saves");
-        importButton.setOnClickListener(v -> openTree(REQUEST_IMPORT_TREE));
-        root.addView(importButton);
-
-        Button changeButton = new Button(this);
-        changeButton.setText("Change game data folder");
-        changeButton.setOnClickListener(v -> openDocumentTree());
-        root.addView(changeButton);
+        root.addView(spacer());
+        root.addView(centeredText(
+                "Export / Import copies RAYMAN*.SAV to or from a folder you pick.",
+                11, 0xFF888888));
 
         setContentView(root);
     }
 
+    private void showSetupScreen() {
+        onHome = false;
+        saveListText = null;
+
+        LinearLayout root = newRoot();
+
+        root.addView(centeredText("Rayverse - Rayman 1", 18, 0xFFE94560));
+
+        statusText = centeredText("", 12, 0xFFFFAA00);
+        root.addView(statusText);
+
+        selectButton = menuButton("Select folder", v -> openDocumentTree());
+        addCenteredButton(root, selectButton);
+        addCenteredButton(root, "Import saves", v -> openTree(REQUEST_IMPORT_TREE));
+        addCenteredButton(root, "Export saves", v -> openTree(REQUEST_EXPORT_TREE));
+        addCenteredButton(root, "Exit", v -> finish());
+
+        root.addView(spacer());
+
+        /* The one-line replacement for the old multi-line required/optional list. */
+        root.addView(centeredText(
+                "Select the folder containing your Rayman 1 game data.",
+                12, 0xFFCCCCCC));
+
+        TextView scanDetails = centeredText("", 11, 0xFF888888);
+        scanDetails.setId(R.id.scan_details);
+        scanDetails.setTag("scanDetails");
+        root.addView(scanDetails);
+
+        setContentView(root);
+    }
+
+    /* ── layout helpers ── */
+
+    private LinearLayout newRoot() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER_HORIZONTAL);
+        root.setPadding(24, 16, 24, 16);
+        root.setBackgroundColor(0xFF1A1A2E);
+        return root;
+    }
+
+    private TextView centeredText(String text, float sp, int color) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextSize(sp);
+        t.setTextColor(color);
+        t.setSingleLine(true);
+        t.setEllipsize(TextUtils.TruncateAt.END);
+        t.setGravity(Gravity.CENTER_HORIZONTAL);
+        return t;
+    }
+
+    private Button menuButton(String label, View.OnClickListener listener) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setTextSize(13);
+        b.setSingleLine(true);
+        b.setOnClickListener(listener);
+        return b;
+    }
+
+    private void addCenteredButton(LinearLayout root, String label, View.OnClickListener listener) {
+        addCenteredButton(root, menuButton(label, listener));
+    }
+
+    private void addCenteredButton(LinearLayout root, Button b) {
+        int width = (int) (240 * getResources().getDisplayMetrics().density);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                width, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, 4, 0, 4);
+        lp.gravity = Gravity.CENTER_HORIZONTAL;
+        root.addView(b, lp);
+    }
+
+    private View spacer() {
+        View v = new View(this);
+        v.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        return v;
+    }
+
+    private String shortSummary(GameDataBridge.ScanResult r) {
+        if (r.isComplete()) return "Game data OK (" + r.found.size() + " files).";
+        return "Missing: " + TextUtils.join(", ", r.missingRequired);
+    }
+
     private void refreshSaveStatus() {
-        if (statusText == null) return;
+        if (saveListText == null) return;
         List<String> saves = dataBridge.listSaveFiles();
-        statusText.setText(saves.isEmpty()
-                ? "No save files on this device yet."
-                : "Save files on device (" + saves.size() + "): " + TextUtils.join(", ", saves));
+        saveListText.setText(saves.isEmpty()
+                ? "No saves on device yet."
+                : "Saves on device: " + saves.size());
     }
 
     private void setStatus(String msg, boolean ok) {
@@ -115,66 +188,6 @@ public class SetupActivity extends Activity {
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                       | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         startActivityForResult(intent, requestCode);
-    }
-
-    private void showSetupScreen() {
-        onHome = false;
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(48, 48, 48, 48);
-        root.setBackgroundColor(0xFF1A1A2E);
-
-        TextView title = new TextView(this);
-        title.setText("Rayverse - Rayman 1");
-        title.setTextSize(24);
-        title.setTextColor(0xFFE94560);
-        title.setPadding(0, 0, 0, 32);
-        root.addView(title);
-
-        TextView instructions = new TextView(this);
-        instructions.setText(
-            "Select the directory containing your Rayman 1 game data.\n\n" +
-            "Required:\n" +
-            "  PCMAP/ (level data)\n" +
-            "  RAY.LNG, SNDD8B.DAT, SNDH8B.DAT\n\n" +
-            "Optional:\n" +
-            "  INTRO.DAT, CONCLU.DAT (cutscenes)\n" +
-            "  Music/ (CD audio tracks)"
-        );
-        instructions.setTextSize(14);
-        instructions.setTextColor(0xFFCCCCCC);
-        instructions.setPadding(0, 0, 0, 32);
-        root.addView(instructions);
-
-        statusText = new TextView(this);
-        statusText.setTextSize(14);
-        statusText.setTextColor(0xFFFFAA00);
-        statusText.setPadding(0, 0, 0, 16);
-        root.addView(statusText);
-
-        selectButton = new Button(this);
-        selectButton.setText("Select Game Data Directory");
-        selectButton.setOnClickListener(v -> openDocumentTree());
-        root.addView(selectButton);
-
-        startButton = new Button(this);
-        startButton.setText("Start Game");
-        startButton.setEnabled(false);
-        startButton.setVisibility(View.GONE);
-        startButton.setOnClickListener(v -> launchGame());
-        root.addView(startButton);
-
-        ScrollView scroll = new ScrollView(this);
-        TextView scanDetails = new TextView(this);
-        scanDetails.setTextSize(12);
-        scanDetails.setTextColor(0xFF888888);
-        scanDetails.setPadding(0, 24, 0, 0);
-        scanDetails.setId(R.id.scan_details);
-        scanDetails.setTag("scanDetails");
-        scroll.addView(scanDetails);
-        root.addView(scroll);
-
-        setContentView(root);
     }
 
     private void openDocumentTree() {
@@ -200,14 +213,14 @@ public class SetupActivity extends Activity {
             GameDataBridge.ScanResult result = dataBridge.scanAndStore();
 
             if (onHome) {
-                /* Home menu has no select/start buttons; just refresh the menu. */
+                /* Home menu has no select button; just refresh or fall back to setup. */
                 if (result.isComplete()) {
                     showHomeMenu();
                 } else {
                     showSetupScreen();
-                    setStatus("Missing required files. Please select the correct directory.", false);
+                    setStatus("Missing required files.", false);
                     TextView scanDetails = findViewById(R.id.scan_details);
-                    if (scanDetails != null) scanDetails.setText(result.getSummary());
+                    if (scanDetails != null) scanDetails.setText(shortSummary(result));
                 }
                 return;
             }
@@ -217,20 +230,17 @@ public class SetupActivity extends Activity {
 
             TextView scanDetails = findViewById(R.id.scan_details);
             if (scanDetails != null) {
-                scanDetails.setText(result.getSummary());
+                scanDetails.setText(shortSummary(result));
             }
 
             if (result.isComplete()) {
-                statusText.setText("Game data found! Ready to play.");
-                statusText.setTextColor(0xFF00FF00);
-                startButton.setEnabled(true);
-                startButton.setVisibility(View.VISIBLE);
-                selectButton.setText("Change Directory");
+                /* Data is valid now: land on the home menu (Play / Export / Import)
+                 * so saves can be managed without entering the game first. */
+                showHomeMenu();
             } else {
-                statusText.setText("Missing required files. Please select the correct directory.");
-                statusText.setTextColor(0xFFFF4444);
+                setStatus("Missing required files.", false);
+                selectButton.setEnabled(true);
             }
-            selectButton.setEnabled(true);
         } else if (requestCode == REQUEST_EXPORT_TREE && resultCode == RESULT_OK && data != null && data.getData() != null) {
             int n = dataBridge.exportSavesTo(data.getData());
             setStatus(n < 0 ? "Export failed."
