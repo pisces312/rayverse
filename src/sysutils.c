@@ -26,16 +26,8 @@ void block_free(mem_t* mem) {
 	mem->len = 0;
 }
 
-#ifdef ANDROID
-/* android_fileio.c provides fopen interception for the SAF fd bridge.
- * fclose is intentionally NOT intercepted: android_fopen() dups the SAF fd,
- * so closing the dup'd FILE* leaves the original fd (owned by ContentResolver)
- * intact and ready for the next open. */
-extern FILE* android_fopen(const char* path, const char* mode);
-#define FOPEN(p, m)   android_fopen((p), (m))
-#else
-#define FOPEN(p, m)   fopen((p), (m))
-#endif
+/* FOPEN (the fopen redirection macro, incl. the Android SAF/save-dir bridge)
+ * is defined in proto.h so it is available to every engine source file. */
 
 FILE* open_data_file(const char* filename, bool error_is_fatal) {
 	FILE* fp = FOPEN(filename, "rb");

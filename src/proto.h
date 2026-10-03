@@ -1,4 +1,21 @@
 
+/* File-open redirection.
+ * On Android, android_fileio.c intercepts fopen() so that game data reads go
+ * through the SAF fd table and save/config files (RAYMAN*.SAV, RAYMAN.CFG) are
+ * resolved to an absolute path under the app's private save dir. All file opens
+ * in the engine MUST go through FOPEN so reads and writes stay symmetric; using
+ * raw fopen() would resolve relative names against the process CWD (which on
+ * Android is "/", not the save dir) and silently fail.
+ * fclose is intentionally NOT intercepted: android_fopen() dups the SAF fd, so
+ * closing the dup'd FILE* leaves the original fd (owned by ContentResolver)
+ * intact and ready for the next open. */
+#ifdef ANDROID
+extern FILE* android_fopen(const char* path, const char* mode);
+#define FOPEN(p, m)   android_fopen((p), (m))
+#else
+#define FOPEN(p, m)   fopen((p), (m))
+#endif
+
 // (win32/linux)_main.cpp
 #ifdef _WIN32
 void win32_advance_frame(app_state_t* app_state);

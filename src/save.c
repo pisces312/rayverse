@@ -591,7 +591,7 @@ void SaveGameOnDisk(u8 which_save) {
     snprintf(filename, 512, "RAYMAN%d.SAV", which_save);
     // stub: writing out to a temporary file for encryption
 
-    FILE* fp = fopen(filename, "wb");
+    FILE* fp = FOPEN(filename, "wb");
     if (fp) {
         fwrite(encoded->data, encoded->len, 1, fp);
         fclose(fp);
