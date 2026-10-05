@@ -19,6 +19,16 @@ What the port adds:
 
 Status: verified playable on a real device (Samsung Galaxy S20, Android 13, arm64) — intro, title menu, world map, level start, save/load and quit all work. Later levels have not been play-tested one by one, so expect progress to follow the original game. arm64 only; x86_64 emulators and 32-bit devices are not built.
 
+### Screenshots
+
+Captured on the device, with the game letterboxed at its original 320:200 aspect:
+
+| Title menu | World map | In-game |
+|:---:|:---:|:---:|
+| <img src="https://github.com/pisces312/rayverse/releases/download/v1.0.2/screenshot-2-title-menu.jpg" alt="Rayverse Android title menu" width="280"> | <img src="https://github.com/pisces312/rayverse/releases/download/v1.0.2/screenshot-4-world-map.jpg" alt="Rayverse Android world map" width="280"> | <img src="https://github.com/pisces312/rayverse/releases/download/v1.0.2/screenshot-5-ingame.jpg" alt="Rayverse Android in-game" width="280"> |
+
+*Rayman is a trademark of Ubisoft. These screenshots show the original game data running under this port; this repository and its APK distribute no game assets — you have to provide your own copy of Rayman 1 for PC.*
+
 ### Building for Android
 
 Requires the Android SDK (API 36), NDK r28, Gradle 9.x, and the SDL2 sources under `3rd/SDL/`:
