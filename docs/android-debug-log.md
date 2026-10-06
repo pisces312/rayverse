@@ -66,7 +66,15 @@
 - **顺带**：同进程重复注册 fd 会把表填满（`fd table full, cannot register 'PCMAP/RAY1.WLD'`）。`nativeRegisterFd` 改为按路径去重，命中旧项就 `close` 掉旧 fd（游戏侧持有的是 `dup()` 过的描述符）并复用表项；表真满时 `close(fd)` 防泄漏。
 - **无害告警**：退出时 `E/SDL: SDLActivity thread ends (error=Try to release egl_surface with context probably still active)` 是 GLES 拆除顺序问题，不影响退出。
 
-## 7. 调试回路中的工具坑
+## 7. 即时存档只抓到 18K 数据段（savestate）
+
+- **症状**：真机点"即时存档"提示失败；模拟器复现时存档"成功"，但日志显示 `data segment base=0x…710 size=18K` —— 引擎全局变量远不止 18K。
+- **根因**：`libmain.so` 有**两个** PF_W 的 PT_LOAD：先是 RELRO 块（`.data.rel.ro/.got`，18K，重定位完成后被 linker `mprotect` 成只读），后才是真正的 `.data + .bss`（约 395K）。`ss_phdr_cb` 取"第一个可写段"命中了 RELRO：快照漏掉全部引擎全局；读档往只读页 memcpy 还会直接 SIGSEGV（真机的"失败"即此路径）。
+- **修复**：`src/savestate.c` 的 `ss_phdr_cb` 改为遍历全部 PF_W PT_LOAD、取 **memsz 最大**的那段。
+- **验证**（pixel6 模拟器，x86_64 + ndk_translation）：`llvm-readelf -l libmain.so` 确认 18K/395K 两段；修复后存档日志 `segment=395K`，关卡内 存档→走动/死亡→读档 位置与 Lum 状态精确还原、无崩溃，读档后引擎正常运行。
+- **通用教训**：用 `dl_iterate_phdr` 找数据段时，"第一个 PF_W 的 PT_LOAD"≠数据段，Android 链接器会把 RELRO 单独成段；要么按最大 memsz 选，要么跳过 GNU_RELRO 覆盖的范围。
+
+## 8. 调试回路中的工具坑
 
 | 问题 | 现象 | 处理 |
 |------|------|------|
@@ -76,9 +84,9 @@
 | 构建"过快" | gradle 2-3 秒完成，怀疑没重编 | 核对产物 mtime，或 `find android/app/build -name "*.so" -newer src/common.h` |
 | Gradle 缓存 | 改 `Android.mk` 后不生效 | 删 `app/build` + `app/.cxx` + `.gradle` 重来 |
 | `adb shell input keyevent` 驱动游戏 | 按键日志显示 down/up 只差 1 ms，引擎按 60 Hz 轮询 `Touche_Enfoncee`，经常一整帧都采不到 | 用 `input keyevent --longpress <code>`（按住 ~500 ms），每步截图确认；YES/NO 弹窗里"红色"才是当前选中项，需先用左/右切换 |
-| 注入按键走到存档选择页就失效 | `CHOOSE A GAME` 页上 `key sc=40 down/up` 日志齐全，但画面不动；人手点 START 正常 | 未定位（怀疑与该页的 `button_released`/时序判定有关），自动化到此交回真人试玩 |
+| 注入按键走到存档选择页就失效 | `CHOOSE A GAME` 页上 `key sc=40 down/up` 日志齐全，但画面不动；人手点 START 正常 | 已定位（2026-10-06）：① 该页 Enter 一次只推进一格名字输入（`SAISIE_NOM` 的 `positionx`），且此子页忽略左右方向键，看似"无反应"；新建档要连按 3 次 Enter 出确认勾再回选择页，第 4 次 Enter 才真正 START。② 快速 down/up（同毫秒）在低帧率下整帧采不到，必须 `--longpress`。另注意虚拟 OK 按钮与 START 弹窗区域重叠，点屏幕会先被 overlay 吃掉 |
 
-## 8. 抓日志的标准做法
+## 9. 抓日志的标准做法
 
 日志级别是**运行时可配**的：debug 包默认全开，release 包默认只留 ERROR 以上。想在 release 包里看细节，先按 tag 打开再重启应用：
 
@@ -109,4 +117,14 @@ adb logcat -v time Rayverse:V Rayverse-DBG:V Rayverse-GL:V Rayverse-IO:V \
 - Java `RayLog.java`：release 下用 `Log.isLoggable(tag, Log.DEBUG)` 判断是否打开。**不能问 INFO 档** —— 属性未设置时 `isLoggable` 的内置默认就是 INFO，会一直返回 true，release 就静默不下来。副作用：Java 侧只认 DEBUG/VERBOSE 两个开关值，设成 INFO 不放开 `RayLog.i/v`（`RayLog.e` 始终输出）。
 - 默认阈值由 `app/build.gradle.kts` 的各 buildType 注入：debug `-DRAY_LOG_DEFAULT=ANDROID_LOG_VERBOSE`，release `-DRAY_LOG_DEFAULT=ANDROID_LOG_ERROR`。
 
+**没有 adb 的场合（真机在路上）**：游戏内设置菜单 →"查看调试日志"。所有 `RAY_LOG` 行都会无条件写进一个 96K 的**堆上**环形缓冲（`android_jni.c` 的 `ray_log_ring_capture`，不受 logcat 门控影响，release 同样全量记录），Java 侧 `RayLog` 另留 400 行环形缓冲；对话框自动滚到末尾并滤掉启动期的 `Opened/Registered fd` 噪音，**全文同时复制到剪贴板**，直接粘贴就能发给开发者。dump 头部带版本号、debug/release、机型、Android 版本——顺便用来确认真机装的是不是含最新修复的包。两个设计约束：环形缓冲必须是堆分配而不是 `.bss` 静态数组，否则会被 savestate 的数据段整体回滚覆盖（连 mutex 一起，可能卡在已锁状态）；`savestate.c` 的每个状态码（含 2/3/5/6/7 的拒绝与失败路径）都有对应日志行，"request → frame hook → 结果"三段缺哪一段就能定位卡在哪。
+
 定位原则：**先用日志确认事件是否到达、值是多少，再改代码**。第 3 条就是靠一行状态日志把"按键映射问题"直接翻案成类型定义问题，否则会一路在映射表里找不存在的 bug。
+
+## 10. 即时存档在个别真机上 OOM：悬垂的 main_mem_tmp（savestate）
+
+- **症状**：Magic8 Pro（BKQ-AN80，Android 17）点"即时存档"报 status 3；诊断日志 `alloc pool 4 8971876904722464K failed: errno=12 (Out of memory)`，但 `VmRSS` 只有 253MB，不是真缺内存。模拟器（x86_64 + ndk_translation）和 S20（Android 13）上同一份包完全正常。
+- **根因**：`main_mem_tmp` 在正常关卡游玩时是**悬垂指针**——引擎在 `bonus.c:167`、`display.c:558` 里 `free(main_mem_tmp)` 后不清 NULL（只有 `ray.c:2790` 清了，那是核心逻辑，不能动）。已释放块的内容完全取决于分配器当下状态：模拟器和 S20 的 scudo 把空闲块读成全零（`capacity==0`，旧代码恰好跳过）；Magic8 Pro 上空闲块被写入了 free-list 头（`capacity≈0x7FE000000000` ≈ 128TB），快照缓冲按这个尺寸 malloc 必然 ENOMEM。旧代码还有个更危险的潜在 bug：把悬垂指针记进 pool 快照，读档时往已释放内存回写 header+数据 = 堆破坏。
+- **修复**：`src/savestate.c` 新增 `ss_pool_ptr()` 池指针净化器——`capacity==0 || capacity>64MB || len>capacity` 一律视为"不存在"；`ss_alloc_buffers`、存档记账、读档校验、回写四条路径统一走它，跳过时记 `pool N header implausible … treating as freed`。回写循环改用**存档时记录的（已净化）指针**，保证任何情况下都不写已释放内存。引擎 free 点一行没碰。
+- **验证**：S20 真机 1-5 关：`pool 4 header implausible (len=0 capacity=0) — treating as freed` → `saved: world=1 level=5 segment=395K` → `loaded: world=1 level=5`，无崩溃，试玩正常；模拟器同链路通过。Magic8 Pro 的 128TB 垃圾值走同一分支（>64MB 上限），待复测。
+- **通用教训**：savestate 这类"信任引擎裸指针"的代码必须做 sanity check——freed-but-not-nulled 的全局是时间炸弹，内容在设备/系统版本间不具移植性；防御要覆盖所有读该指针的路径（分配、记录、校验、回写），漏一条就是崩溃或静默堆破坏。
