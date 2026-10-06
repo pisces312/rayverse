@@ -1599,6 +1599,10 @@ void destroy_image(image_t* image);
 // platform routines
 s64 get_clock(void);
 float get_seconds_elapsed(s64 start, s64 end);
+#ifdef ANDROID
+// savestate.c (Android-only instant save/load, hooked from advance_frame)
+void savestate_frame_hook(void);
+#endif
 // sound.c
 void lock_audio(void);
 void unlock_audio(void);

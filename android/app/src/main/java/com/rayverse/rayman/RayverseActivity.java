@@ -1,10 +1,17 @@
 package com.rayverse.rayman;
 
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.widget.FrameLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
 import org.libsdl.app.SDLActivity;
 
 /**
@@ -21,6 +28,7 @@ public class RayverseActivity extends SDLActivity {
     private static final String KEY_ORIENTATION = "orientation"; /* "landscape" | "portrait" */
 
     private GamepadOverlay overlay;
+    private final Handler ssHandler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -74,22 +82,36 @@ public class RayverseActivity extends SDLActivity {
         new AlertDialog.Builder(this)
             .setTitle("设置")
             .setItems(new String[]{
+                    "即时存档",
+                    "即时读档",
+                    "查看调试日志",
                     orientLabel,
                     "编辑按钮位置",
                     "恢复默认布局"
                 }, (dialog, which) -> {
                     switch (which) {
                         case 0:
+                            nativeRequestSaveState();
+                            pollSaveStateStatus(0);
+                            break;
+                        case 1:
+                            nativeRequestLoadState();
+                            pollSaveStateStatus(0);
+                            break;
+                        case 2:
+                            showDebugLogDialog();
+                            break;
+                        case 3:
                             String newOrientation = isLandscape ? "portrait" : "landscape";
                             prefs.edit().putString(KEY_ORIENTATION, newOrientation).apply();
                             setRequestedOrientation("portrait".equals(newOrientation)
                                     ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                                     : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
                             break;
-                        case 1:
+                        case 4:
                             if (overlay != null) overlay.setEditMode(true);
                             break;
-                        case 2:
+                        case 5:
                             if (overlay != null) overlay.resetLayout();
                             break;
                     }
@@ -97,6 +119,93 @@ public class RayverseActivity extends SDLActivity {
             .setNegativeButton("关闭", null)
             .show();
     }
+
+    /**
+     * The native request is consumed on the game thread at the next frame
+     * boundary, so poll for the status code instead of expecting it inline.
+     * Frames can take a while during loading screens, hence the retries.
+     */
+    private void pollSaveStateStatus(int attempt) {
+        ssHandler.postDelayed(() -> {
+            int s = nativeGetSaveStateStatus();
+            RayLog.i(TAG, "savestate poll: status=" + s + " (attempt " + attempt + ")");
+            if (s == 0) {
+                if (attempt < 15) {
+                    pollSaveStateStatus(attempt + 1);
+                } else {
+                    toast("即时存档操作超时");
+                }
+                return;
+            }
+            switch (s) {
+                case 1: toast("已保存即时存档"); break;
+                case 2: toast("只能在关卡游玩中存档"); break;
+                case 3: toast("即时存档失败"); break;
+                case 4: toast("已读取即时存档"); break;
+                case 5: toast("没有可用的即时存档"); break;
+                case 6: toast("只能在关卡游玩中读档"); break;
+                case 7: toast("存档与当前状态不兼容"); break;
+                default: break;
+            }
+        }, 200);
+    }
+
+    private void toast(String msg) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * Shows the debug log (Java ring + native RAY_LOG ring) in a scrollable
+     * dialog and copies the whole text to the clipboard, so a failure on a
+     * real device can be reported without adb.
+     */
+    private void showDebugLogDialog() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Rayverse ").append(BuildConfig.VERSION_NAME)
+          .append(BuildConfig.DEBUG ? " (debug)" : " (release)")
+          .append(" | ").append(android.os.Build.MODEL)
+          .append(" | Android ").append(android.os.Build.VERSION.RELEASE)
+          .append(" (API ").append(android.os.Build.VERSION.SDK_INT).append(")\n");
+        sb.append("----- Java -----\n").append(RayLog.dump()).append('\n');
+        String nativeDump = nativeGetDebugLogDump();
+        sb.append("----- Native -----\n")
+          .append(nativeDump == null ? "(no data)" : nativeDump);
+        String dump = sb.toString();
+
+        ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (cm != null) {
+            cm.setPrimaryClip(ClipData.newPlainText("rayverse-debug-log", dump));
+            toast("调试日志已复制到剪贴板");
+        }
+        RayLog.i(TAG, "debug log viewed (" + dump.length() + " chars)");
+
+        TextView tv = new TextView(this);
+        tv.setTextIsSelectable(true);
+        tv.setTextSize(11f);
+        int pad = (int) (12 * getResources().getDisplayMetrics().density);
+        tv.setPadding(pad, pad, pad, pad);
+        /* Drop the per-file fd noise from the *displayed* text; the clipboard
+         * still holds everything. Show the tail only. */
+        String shown = dump.replaceAll("(?m)^.*(Opened|Registered) fd .*\\r?\\n", "");
+        int maxShown = 20000;
+        tv.setText(shown.length() > maxShown
+                ? "…(前文见剪贴板)…\n" + shown.substring(shown.length() - maxShown)
+                : shown);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(tv);
+        scroll.post(() -> scroll.fullScroll(android.view.View.FOCUS_DOWN));
+
+        new AlertDialog.Builder(this)
+            .setTitle("调试日志")
+            .setView(scroll)
+            .setPositiveButton("关闭", null)
+            .show();
+    }
+
+    private static native void nativeRequestSaveState();
+    private static native void nativeRequestLoadState();
+    private static native int nativeGetSaveStateStatus();
+    private static native String nativeGetDebugLogDump();
 
     /**
      * Override SDL's orientation handling so the game respects the user's

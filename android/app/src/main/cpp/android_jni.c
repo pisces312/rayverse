@@ -13,11 +13,14 @@
 
 #include <jni.h>
 #include "ray_log.h"
+#include "savestate.h"
 #include <SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <pthread.h>
+#include <time.h>
 #include <sys/stat.h>
 
 #define LOG_TAG "Rayverse"
@@ -149,6 +152,130 @@ const char* android_get_game_data_path(void) {
 static void disable_accelerometer(void) {
     SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
     LOGI("Accelerometer-as-joystick disabled");
+}
+
+/* ---- In-app debug-log ring (see ray_log.h) ----
+ * Fed by every RAY_LOG call on any thread, regardless of the logcat gate.
+ * Bounded at 96K: when full, the oldest third (rounded to a line boundary)
+ * is dropped so the recent — and interesting — lines survive.
+ *
+ * The state is heap-allocated on purpose: the savestate snapshot restores
+ * libmain.so's whole .data/.bss, so a static buffer here (and especially its
+ * mutex) could be rolled back into a locked state. The heap is not part of
+ * that segment, and the pointer is published on the very first log line —
+ * long before a savestate request is even possible — so restoring the
+ * pointer always writes back the same value. */
+
+#define RAY_LOG_RING_CAP (96 * 1024)
+
+typedef struct {
+    pthread_mutex_t lock;
+    size_t len;
+    long long t0_ms;
+    char data[RAY_LOG_RING_CAP];
+} ray_log_ring_t;
+
+static ray_log_ring_t* g_log_ring = NULL;
+
+static ray_log_ring_t* log_ring_get(void) {
+    ray_log_ring_t* ring = __atomic_load_n(&g_log_ring, __ATOMIC_ACQUIRE);
+    if (ring) return ring;
+    ring = (ray_log_ring_t*)calloc(1, sizeof(ray_log_ring_t));
+    if (!ring) return NULL;
+    pthread_mutex_init(&ring->lock, NULL);
+    ray_log_ring_t* expected = NULL;
+    if (!__atomic_compare_exchange_n(&g_log_ring, &expected, ring, 0,
+                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        free(ring);      /* another thread won the race */
+        return expected;
+    }
+    return ring;
+}
+
+static long long log_monotonic_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+void ray_log_ring_capture(int level, const char* tag, const char* msg) {
+    char lvl = level >= ANDROID_LOG_ERROR ? 'E'
+             : level == ANDROID_LOG_WARN  ? 'W'
+             : level == ANDROID_LOG_INFO  ? 'I'
+             : level == ANDROID_LOG_DEBUG ? 'D' : 'V';
+    long long now = log_monotonic_ms();
+
+    char line[600];
+    int n = snprintf(line, sizeof(line), "%lld.%03lld %c/%s: %s\n",
+                     now / 1000, now % 1000, lvl, tag, msg);
+    if (n <= 0) return;
+    if ((size_t)n >= RAY_LOG_RING_CAP) n = RAY_LOG_RING_CAP - 1;
+
+    ray_log_ring_t* ring = log_ring_get();
+    if (!ring) return;
+
+    pthread_mutex_lock(&ring->lock);
+    if (ring->len + n >= RAY_LOG_RING_CAP) {
+        size_t cut = ring->len / 3;
+        while (cut < ring->len && ring->data[cut - 1] != '\n') cut++;
+        if (cut >= ring->len) cut = ring->len;  /* single huge line? */
+        size_t keep = ring->len - cut;
+        memmove(ring->data, ring->data + cut, keep);
+        ring->len = keep;
+    }
+    memcpy(ring->data + ring->len, line, n);
+    ring->len += n;
+    pthread_mutex_unlock(&ring->lock);
+}
+
+/* Snapshot for the Java-side log viewer. Returns NULL only on OOM. */
+JNIEXPORT jstring JNICALL
+Java_com_rayverse_rayman_RayverseActivity_nativeGetDebugLogDump(
+    JNIEnv* env, jclass cls)
+{
+    (void)cls;
+    ray_log_ring_t* ring = g_log_ring;
+    if (!ring) return (*env)->NewStringUTF(env, "(no log captured yet)");
+    pthread_mutex_lock(&ring->lock);
+    size_t len = ring->len;
+    char* snapshot = (char*)malloc(len + 1);
+    if (snapshot) {
+        memcpy(snapshot, ring->data, len);
+        snapshot[len] = '\0';
+    }
+    pthread_mutex_unlock(&ring->lock);
+    if (!snapshot) return (*env)->NewStringUTF(env, "(dump failed: out of memory)");
+    jstring s = (*env)->NewStringUTF(env, snapshot);
+    free(snapshot);
+    return s;
+}
+
+/* ---- Savestate (instant save/load) ----
+ * The heavy lifting runs on the game thread inside advance_frame(); these
+ * JNI calls only queue a request / read back the status code. */
+
+JNIEXPORT void JNICALL
+Java_com_rayverse_rayman_RayverseActivity_nativeRequestSaveState(
+    JNIEnv* env, jclass cls)
+{
+    (void)env; (void)cls;
+    savestate_request(1);
+}
+
+JNIEXPORT void JNICALL
+Java_com_rayverse_rayman_RayverseActivity_nativeRequestLoadState(
+    JNIEnv* env, jclass cls)
+{
+    (void)env; (void)cls;
+    savestate_request(2);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_rayverse_rayman_RayverseActivity_nativeGetSaveStateStatus(
+    JNIEnv* env, jclass cls)
+{
+    (void)env; (void)cls;
+    return savestate_get_status();
 }
 
 /* ---- Main entry ---- */

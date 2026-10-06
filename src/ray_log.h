@@ -3,6 +3,7 @@
 
 #include <android/log.h>
 #include <dlfcn.h>
+#include <stdio.h>
 
 // Threshold used when log.tag.<TAG> is not set. Gradle injects it per build
 // type: debug = ANDROID_LOG_VERBOSE (everything), release = ANDROID_LOG_ERROR.
@@ -27,10 +28,18 @@ static inline int ray_log_enabled(int level, const char* tag) {
     return is_loggable(level, tag, RAY_LOG_DEFAULT) > 0;
 }
 
+/* In-app debug-log ring, implemented in android_jni.c. Every RAY_LOG line is
+ * captured there regardless of the logcat gate, so the game's "查看调试日志"
+ * menu can show and copy the log even on a release build without adb. */
+void ray_log_ring_capture(int level, const char* tag, const char* msg);
+
 #define RAY_LOG(tag, level, ...)                                            \
     do {                                                                    \
+        char ray_log_line_[512];                                            \
+        snprintf(ray_log_line_, sizeof(ray_log_line_), __VA_ARGS__);       \
+        ray_log_ring_capture((level), (tag), ray_log_line_);                \
         if (ray_log_enabled(level, tag)) {                                  \
-            __android_log_print(level, tag, __VA_ARGS__);                   \
+            __android_log_write((level), (tag), ray_log_line_);             \
         }                                                                   \
     } while (0)
 

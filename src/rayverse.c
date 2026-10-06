@@ -133,6 +133,9 @@
 #include "ray.c"
 #include "sound.c"
 #include "save.c"
+#ifdef ANDROID
+#include "savestate.c"
+#endif
 #include "saxo.c"
 #include "screen.c"
 #include "skops.c"
