@@ -205,3 +205,62 @@ slot 0: region seg moved since capture (saved=… live=… delta=10043392)
   （保留本进程活值）；池里零模块指针，覆盖完备。完整调研过程（tombstone 栈帧链
   还原、旧档偏移对比、危险面盘点）见 `docs/savestate-phase2.md` §11.5。
 - **验收**：真机读旧版本槽（world 1 level 9）成功恢复、无闪退（2026-10-14）。
+
+## 15. 同版本跨进程读档：真机挂起/abort（调研中，savestate）
+
+- **症状**（1.0.3 真机，同版本存档→退出→重进→读档）：
+  - Honor（BKQ-AN80）：读档后画面卡死不崩，无 tombstone。日志停在
+    `slot 0 read` 之后，`ss_do_load` 里预期的 `load: kept …` 一条都没打出来
+    （当时装的 1.0.3 无步进日志，只能定位到"进入 ss_do_load 后挂"）。
+  - S20（SM-G9810）：直接 abort——`F libc: FORTIFY: pthread_mutex_lock called
+    on a destroyed mutex (0x723bee84a8)`，线程不是加载线程（加载线程 tid 23065，
+    abort 线程 tid 23069）。无 root 拿不到 tombstone，crash buffer 里也只有这一行。
+  - **debug 包（-O0）复现不了**，同代码 release 才出事 → 指向优化相关 UB 或时序竞争。
+- **排查手段**：在 `ss_do_load()` 全程插步进日志（`load step:` 系列）重打 release。
+  S20 上的推进结果：`stop_all_snd #1 → ClearQueuedAudio → backups → keep-live
+  scan → segment restored → platform state restored → kept 1647 → pools →
+  SetPalette done` 全部打印，**卡点窗口收窄到 SetPalette 之后、`stop_all_snd #2`
+  之前**——即音频 fixup 段：bank 指针回填 / `LoadBnkWorld(num_world_choice)` /
+  ogg fixup / `stop_all_snd()`。注意崩溃线程另有其人，说明是**恢复期间其他线程
+  通过被恢复的（悬垂）指针踩进去**，而不是加载线程本身顺序走崩。
+- **当前假设**（按嫌疑排序）：
+  1. 整段 memcpy 恢复把 `android_jni.c` 的 .bss 静态量（`g_fd_table`、
+     `g_log_ring` 等）也回滚成**旧进程**的值——会话内无害（同值），跨进程全是
+     悬垂/错乱值。`g_log_ring` 若回滚，任何线程下一次 RAY_LOG 都会
+     `pthread_mutex_lock` 到旧进程 ring 的锁上（ring 结构第一个成员就是
+     pthread_mutex_t）→ 与 S20 的 FORTIFY 报文吻合。加载线程自己的日志能打出来
+     目前解释不通（待指针值日志验证）。
+  2. 恢复后的 `ogg_cd_track`/声音 voices 指向旧进程堆（heap_other 未重定位），
+     其他线程（音频相关）在 fixup 完成前使用。
+  3. `LoadBnkWorld` 走 `android_fopen` → 被回滚的 `g_fd_table` 命中旧 fd 号。
+- **下一步**：
+  1. 已在音频 fixup 段加指针值日志（live vs snap 的 bnk/tchatch/dec/file）+
+     `LoadBnkWorld` 前后日志，重打 release 复现 → 看最后一条日志定加载线程位置，
+     并核对哪个指针是旧进程地址。
+  2. 若坐实 .bss 静态量回滚：修法方向是把 android_jni/android_fileio 的静态量
+     （至少 `g_fd_table`、`g_fd_count`、`g_log_ring`、`g_save_dir`、`g_saf_uri`、
+     `g_use_saf`）并入 keep-live/排除面——类比 `ss` 的单区间排除（§注释 184），
+     或扩展 keep-live 扫描把这些符号的地址区间整个保活。`ss_ctx_t` 冻结约束
+     （sizeof=544）不涉及，无需动布局。
+  3. 复验 Honor 挂起与 S20 abort 是否同根因（预期：是，不同 libc FORTIFY 行为
+     下的两种表现）。
+  4. 修复后按惯例真机验收：同版本跨进程存→退→读，三个世界各一档；再加跨版本
+     旧槽回归（§14 场景不回退）。
+- **环境坑**：Honor 上 1.0.3 release 与本机 keystore 签名不一致无法覆盖装
+  （`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），换 S20 测试；S20 需先卸载旧 1.0
+  （同为异签名）。无 root 设备拿 tombstone 只有 logcat crash buffer 一条 F 行，
+  native backtrace 缺失时靠步进日志收窄窗口。
+
+- **根因坐实**（2026-10-14 22:27 第二轮 release 复现，带指针日志包）：SIGSEGV 的
+  backtrace 是 `ray_log_ring_capture+344 ← savestate_frame_hook`，寄存器里还留着
+  正在格式化的字符串 "segment"/"restored"——正是 segment memcpy 之后的第一条
+  SSLOGI。**整段 memcpy 把 `android_jni.c` 的 .bss 静态量 `g_log_ring` 回滚成旧进程
+  的 ring 指针（悬垂）**，恢复后第一次 RAY_LOG 就踩进去：落在未映射页 → SIGSEGV；
+  落在已映射但含 destroyed-mutex 模式 → FORTIFY abort（第一轮 tid 23069 的崩法）；
+  落在映射但锁状态异常 → 挂死（Honor）。同一根因三种表现，随悬垂地址落点而定，
+  这也解释了 debug 复现不稳定。`g_fd_table`/`g_fd_count`/`g_saf_uri`/
+  `g_game_data_path`/`g_use_saf`/`g_save_dir` 同样会被回滚（fd 表回滚为旧进程
+  fd 号，`LoadBnkWorld`→`android_fopen` 会命中错 fd），必须一并保活。
+
+- **完整调研与修复设计**（含风险评估、验证计划）见
+  `docs/savestate-cross-process-crash.md`。
