@@ -7,24 +7,45 @@
  * the advance_frame() hook in engine.c.
  *
  * Phase 1 = one in-memory snapshot. Phase 2a = 3 on-disk slots in the save
- * dir plus a pointer-classification probe (docs/savestate-phase2.md). */
+ * dir plus a pointer-classification probe (docs/savestate-phase2.md).
+ * Phase 2b = restoring a slot written by another process: the snapshot's
+ * absolute addresses are relocated onto this process' layout, and an
+ * "armed resume" walks the engine to the snapshot's world/level first. */
 
 #ifdef ANDROID
 
 /* Called on the game thread at every frame boundary; executes a pending
- * save/load request if one was queued from the UI thread. */
+ * save/load request if one was queued from the UI thread, and applies an
+ * armed resume once the engine stands in the target level. */
 void savestate_frame_hook(void);
 
 /* Queue a request from any thread.
  * op: 1 = capture + write to slot, 2 = read slot + restore. slot: 0..2.
- * The work happens on the game thread at the next frame boundary. */
+ * The work happens on the game thread at the next frame boundary.
+ * Any manual request disarms a pending armed resume. */
 void savestate_request(int op, int slot);
+
+/* Armed resume (phase 2b): remember the slot to restore and steer the
+ * engine to its world/level on the next world-map visit, then apply it at
+ * the first frame of that level. Call from Java after the user confirms,
+ * before the game thread starts. The slot header is re-read here; a slot
+ * that does not parse or was written by another build is ignored. */
+void savestate_arm(int slot);
+
+/* World-map steering hooks (called from display.c under #ifdef ANDROID):
+ * savestate_worldmap_hook() leaves the map immediately (sets new_world),
+ * savestate_pick_level_hook() pins num_world_choice/num_level_choice after
+ * DETER_WORLD_AND_LEVEL()/SELECT_LEVEL() have derived their own values.
+ * Both are no-ops unless a resume is armed. */
+void savestate_worldmap_hook(void);
+void savestate_pick_level_hook(void);
 
 /* Returns the last status code and resets it to idle (read-once).
  * 1=saved to slot 2=save rejected 3=save failed 4=loaded from slot
  * 5=no snapshot 6=load rejected 7=load mismatch
  * 8=writing the slot file failed 9=slot file unusable (magic/format/layout
- * stamp/checksum) 10=slot file does not match this process' memory layout */
+ * stamp/checksum) 10=slot file cannot be mapped into this process (a
+ * region has no live counterpart to relocate onto) */
 int savestate_get_status(void);
 
 /* 1 once a snapshot exists in memory. */

@@ -300,6 +300,18 @@ Java_com_rayverse_rayman_RayverseActivity_nativeGetSaveStateSlotInfo(
     return (*env)->NewStringUTF(env, text);
 }
 
+/* Arm a cross-process resume: the slot header is read here and the game
+ * thread steers itself to that world/level before restoring it. Called on
+ * the UI thread before the SDL thread exists, i.e. before any of the state
+ * it touches is live. */
+JNIEXPORT void JNICALL
+Java_com_rayverse_rayman_RayverseActivity_nativeArmSaveState(
+    JNIEnv* env, jclass cls, jint slot)
+{
+    (void)env; (void)cls;
+    savestate_arm((int)slot);
+}
+
 /* ---- Main entry ---- */
 
 JNIEXPORT int JNICALL

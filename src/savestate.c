@@ -20,12 +20,17 @@
  * dangling, so the live one is kept and the world bank is reloaded instead.
  *
  * Phase 1: single slot, memory only.
- * Phase 2a (this file): the state is described as a *region table* so it can
+ * Phase 2a: the state is described as a *region table* so it can
  *   be written to one of 3 slot files in the save dir and read back; plus a
  *   pointer-classification probe that counts what kind of absolute addresses
- *   the snapshot actually contains. The probe data is what gates phase 2b
- *   (restoring across a process restart, where every one of those addresses
- *   has been re-randomised by ASLR) — see docs/savestate-phase2.md.
+ *   the snapshot actually contains (docs/savestate-phase2.md).
+ * Phase 2b (this file): a slot written by another process is restored too.
+ *   ASLR has moved every address in it, so before the snapshot is applied
+ *   every pointer-sized value in the payloads is translated from the saved
+ *   region layout onto this process' one (ss_relocate_buffer); and an
+ *   "armed resume" walks the engine into the snapshot's world/level first
+ *   (savestate_arm + the two display.c hooks) so the apply happens on a
+ *   normal gameplay frame of the right level.
  */
 
 #ifdef ANDROID
@@ -70,17 +75,26 @@ enum {
 #define SS_MAX_SLOTS 3
 #define SS_SLOT_FILE "rayverse_ss_%d.bin"
 #define SS_MAGIC 0x53535652u          /* 'R''V''S''S' */
-#define SS_FMT_VERSION 1u
+#define SS_FMT_VERSION 2u             /* v2: region table carries ADDRESS_ONLY
+                                       * entries and pool sizes are spans, so
+                                       * v1 files are rejected by magic/fmt */
 #define SS_STAMP_MISSING 0u
 
-/* Regions are the addressable pieces of the snapshot. Phase 2a only has COPY
- * ones; phase 2b adds ADDRESS_ONLY/COPY_RELOAD entries (jumelle tables,
- * EffetBufferNormal, sound banks) so the relocation pass knows about them. */
+/* Regions are the addressable pieces of the snapshot. COPY regions carry a
+ * payload in the file; ADDRESS_ONLY regions record only the block the state
+ * points at (jumelle lookup tables, EffetBufferNormal, Def_Bande) so the
+ * relocation pass can map saved references onto this process' blocks. */
 enum {
 	SS_RGN_SEG = 0,
 	SS_RGN_POOL0 = 1,               /* +i for each arena pool */
 	SS_RGN_FLOCON = SS_RGN_POOL0 + SS_POOL_COUNT,
 	SS_RGN_RVB,
+	SS_RGN_EFFET,                   /* EffetBufferNormal */
+	SS_RGN_DISTX,                   /* DistPointX */
+	SS_RGN_DISTY,                   /* DistPointY */
+	SS_RGN_EXP,                     /* ExpPoint */
+	SS_RGN_JZOOM,                   /* JumelleZoomDef */
+	SS_RGN_BANDE,                   /* Def_Bande */
 	SS_RGN_COUNT
 };
 
@@ -95,7 +109,9 @@ typedef struct {
 	u32 id;
 	u32 kind;
 	u64 base;      /* address inside the process that wrote the file */
-	u64 size;      /* payload bytes */
+	u64 size;      /* address span covered by the region — for pools this is
+	                * sizeof(mem_t) + capacity (the header plus the data the
+	                * snapshot's pointers can address), not the payload bytes */
 	u64 len;       /* mem_t::len — pools only */
 	s64 cursor;    /* mem_t::cursor — pools only */
 } ss_rec_t;
@@ -128,10 +144,20 @@ typedef struct {
 	atomic_int status;
 	int has_snapshot;
 
+	/* Armed resume (phase 2b): set from Java before the game thread starts,
+	 * consumed on the game thread. Lives inside ss so it survives the
+	 * segment restore (ss is backed up around it like the platform state). */
+	int armed;
+	int arm_slot;
+	int arm_world;
+	int arm_level;
+	int arm_delivered;
+
 	uintptr_t seg_base;
 	size_t seg_size;
 	u8* seg_copy;
 	uintptr_t seg_file_base;   /* as recorded by the file we loaded */
+	uintptr_t mod_lo, mod_hi;  /* libmain.so's full mapped span (live) */
 
 	ss_pool_snap_t pools[SS_POOL_COUNT];
 	u8* flocon_copy;
@@ -150,6 +176,11 @@ typedef struct {
 
 	s16 meta_num_world;
 	s16 meta_num_level;
+
+	/* Per-region base as recorded by the file we loaded (0 = none): the
+	 * relocation pass translates payload values from these onto the live
+	 * bases. */
+	u64 saved_base[SS_RGN_COUNT];
 
 	u32 stamp;      /* computed once; 0 until the segment is located */
 } ss_ctx_t;
@@ -208,8 +239,13 @@ static int ss_phdr_cb(struct dl_phdr_info* info, size_t size, void* data) {
 	// and the real data segment (.data + .bss). Take the largest one.
 	for (int i = 0; i < info->dlpi_phnum; i++) {
 		const ElfW(Phdr)* ph = &info->dlpi_phdr[i];
-		if (ph->p_type == PT_LOAD && (ph->p_flags & PF_W) && ph->p_memsz > ss.seg_size) {
-			ss.seg_base = (uintptr_t)(info->dlpi_addr + ph->p_vaddr);
+		if (ph->p_type != PT_LOAD) continue;
+		uintptr_t lo = (uintptr_t)(info->dlpi_addr + ph->p_vaddr);
+		uintptr_t hi = lo + ph->p_memsz;
+		if (lo < ss.mod_lo) ss.mod_lo = lo;
+		if (hi > ss.mod_hi) ss.mod_hi = hi;
+		if ((ph->p_flags & PF_W) && ph->p_memsz > ss.seg_size) {
+			ss.seg_base = lo;
 			ss.seg_size = ph->p_memsz;
 		}
 	}
@@ -218,12 +254,15 @@ static int ss_phdr_cb(struct dl_phdr_info* info, size_t size, void* data) {
 
 static int ss_locate_segment(void) {
 	if (ss.seg_base) return 1;
+	ss.mod_lo = (uintptr_t)-1;
+	ss.mod_hi = 0;
 	dl_iterate_phdr(ss_phdr_cb, NULL);
 	if (!ss.seg_base) {
 		SSLOGE("writable PT_LOAD of libmain.so not found");
 		return 0;
 	}
-	SSLOGI("data segment base=%p size=%zuK", (void*)ss.seg_base, ss.seg_size / 1024);
+	SSLOGI("data segment base=%p size=%zuK module=%p..%p",
+	       (void*)ss.seg_base, ss.seg_size / 1024, (void*)ss.mod_lo, (void*)ss.mod_hi);
 	return 1;
 }
 
@@ -257,6 +296,7 @@ static u32 ss_compute_stamp(void) {
 	u64 h = SS_FNV_OFFSET;
 	h = ss_hash_u64(h, (u64)sizeof(app_state_t));
 	h = ss_hash_u64(h, (u64)sizeof(mem_t));
+	h = ss_hash_u64(h, (u64)sizeof(ss_ctx_t));
 	h = ss_hash_u64(h, (u64)sizeof(flocon_t) * SS_FLOCON_COUNT);
 	h = ss_hash_u64(h, (u64)sizeof(rgb_palette_t) * SS_RVB_COUNT);
 	h = ss_hash_u64(h, (u64)sizeof(ogg_t));
@@ -375,6 +415,24 @@ static u8* ss_region_payload(int id, size_t* size) {
 	return NULL;
 }
 
+/* One-shot heap blocks that hold lookup tables or scratch screens: their
+ * content is deterministic (or rebuilt every frame) but their addresses are
+ * referenced from the state, so the file records where they were and the
+ * relocation pass maps those references onto this process' block. */
+static void ss_addr_only_block(int id, u8** ptr, size_t* size) {
+	*ptr = NULL;
+	*size = 0;
+	switch (id) {
+		case SS_RGN_EFFET: *ptr = EffetBufferNormal;     *size = 128000; break;
+		case SS_RGN_DISTX: *ptr = (u8*)DistPointX;       *size = 161 * sizeof(s32); break;
+		case SS_RGN_DISTY: *ptr = (u8*)DistPointY;       *size = 65 * sizeof(s32); break;
+		case SS_RGN_EXP:   *ptr = (u8*)ExpPoint;         *size = 5120 * sizeof(s32); break;
+		case SS_RGN_JZOOM: *ptr = (u8*)JumelleZoomDef;   *size = 29025 * sizeof(s32); break;
+		case SS_RGN_BANDE: *ptr = (u8*)Def_Bande;        *size = 18000 * sizeof(def_bande_t); break;
+		default: break;
+	}
+}
+
 /* Live state only — never the recorded snapshot: ss_read_slot() validates the
  * file against this process before anything has been captured into ss. */
 static void ss_region_live(int id, uintptr_t* base, u64* size, u64* len, s64* cursor) {
@@ -398,18 +456,37 @@ static void ss_region_live(int id, uintptr_t* base, u64* size, u64* len, s64* cu
 	if (i >= 0 && i < SS_POOL_COUNT) {
 		mem_t* p = ss_pool_ptr(i);   /* sanitized: NULL when freed/dangling */
 		if (!p) return;
+		/* The span includes the mem_t header: the engine's pool globals point
+		 * at the header and block_malloc() can hand out the very last bytes of
+		 * the data area, so every address in [p, p+sizeof(mem_t)+capacity) is
+		 * a legitimate relocation target. */
 		*base = (uintptr_t)p;
-		*size = p->capacity;
+		*size = sizeof(mem_t) + p->capacity;
 		*len = p->len;
 		*cursor = p->cursor;
+		return;
+	}
+	u8* blk;
+	size_t blk_size;
+	ss_addr_only_block(id, &blk, &blk_size);
+	if (blk) {
+		*base = (uintptr_t)blk;
+		*size = blk_size;
 	}
 }
 
 static const char* ss_region_name(int id) {
 	static const char* const names[SS_RGN_COUNT] = {
-		"seg", "pool0", "pool1", "pool2", "pool3", "pool4", "flocon", "rvb"
+		"seg", "pool0", "pool1", "pool2", "pool3", "pool4", "flocon", "rvb",
+		"EffetBufferNormal", "DistPointX", "DistPointY", "ExpPoint",
+		"JumelleZoomDef", "Def_Bande"
 	};
 	return (id >= 0 && id < SS_RGN_COUNT) ? names[id] : "?";
+}
+
+static int ss_region_kind(int id) {
+	return (id >= SS_RGN_EFFET && id < SS_RGN_COUNT)
+	     ? SS_KIND_ADDRESS_ONLY : SS_KIND_COPY;
 }
 
 static void ss_build_records(ss_rec_t* rec) {
@@ -419,7 +496,7 @@ static void ss_build_records(ss_rec_t* rec) {
 		s64 cursor;
 		memset(&rec[id], 0, sizeof(rec[id]));
 		rec[id].id = (u32)id;
-		rec[id].kind = SS_KIND_COPY;
+		rec[id].kind = (u32)ss_region_kind(id);
 		ss_region_live(id, &base, &size, &len, &cursor);
 		rec[id].base = base;
 		rec[id].size = size;
@@ -760,6 +837,137 @@ static void ss_run_probe(const char* why) {
 	free(maps);
 }
 
+/* ---- pointer relocation (phase 2b) ----
+ *
+ * A slot file is raw bytes full of absolute addresses. Within one process
+ * every one of them is still valid at load time; across a process restart
+ * ASLR has moved the module, every malloc arena and every one-shot block,
+ * so before the snapshot is applied each 8-byte value that looks like an
+ * address is translated from the *saved* region layout onto this process'
+ * one: v += (live_base - saved_base) of the region it points into.
+ *
+ * The targets are exactly the region table plus libmain's text/rodata span
+ * (which shifts by the same module delta as the data segment). Pointers
+ * *inside* the snapshot (global -> global, pool A -> pool B) need no special
+ * case: they are translated by the delta of the region they point INTO, and
+ * that is what makes e.g. the pool globals in the restored data segment line
+ * up with this process' pools again. When two targets with *different*
+ * deltas both claim a value it is left untouched and counted as ambiguous;
+ * values that match no target are packed game data and are left alone too.
+ *
+ * The scan is byte-granular on purpose: obj_t is a packed 155-byte struct,
+ * so inside an obj_t array 7 of 8 elements hold their pointer fields at
+ * unaligned offsets (the phase 2a probe only saw the aligned 1/8). Address
+ * shapes make the overlaps safe: real pointers here are 0x0000_7xxx_xxxx_xxxx,
+ * so a shifted read is either below the noise floor, above 2^48 (two packed
+ * u32s), or has its halves in the wrong places for any region window. */
+
+typedef struct {
+	u64 lo, hi;
+	s64 delta;
+	const char* name;
+	u64 hits;
+} ss_reloc_tgt_t;
+
+#define SS_RELOC_MAX (SS_RGN_COUNT + 2)
+
+static int ss_build_reloc_targets(ss_reloc_tgt_t* t, int max) {
+	int nt = 0;
+	s64 seg_delta = 0;
+	if (ss.saved_base[SS_RGN_SEG] && ss.seg_base)
+		seg_delta = (s64)((u64)ss.seg_base - ss.saved_base[SS_RGN_SEG]);
+	for (int id = 0; id < SS_RGN_COUNT && nt < max; id++) {
+		uintptr_t live;
+		u64 size, len;
+		s64 cursor;
+		u64 saved = ss.saved_base[id];
+		ss_region_live(id, &live, &size, &len, &cursor);
+		if (!saved || !live || !size) continue;
+		t[nt].lo = saved;
+		t[nt].hi = saved + size;
+		t[nt].delta = (s64)((u64)live - saved);
+		t[nt].name = ss_region_name(id);
+		t[nt].hits = 0;
+		nt++;
+	}
+	/* libmain.so's text/rodata/relro: the function pointers (command tables,
+	 * collision callbacks, object behaviours) all live there and shift by the
+	 * very same bias as the data segment. The span also contains the segment
+	 * mapping itself — harmless, same delta, and the scanner treats equal
+	 * deltas as one answer. */
+	if (seg_delta && ss.mod_lo < ss.mod_hi && nt < max) {
+		t[nt].lo = (u64)ss.mod_lo - (u64)seg_delta;
+		t[nt].hi = (u64)ss.mod_hi - (u64)seg_delta;
+		t[nt].delta = seg_delta;
+		t[nt].name = "libmain";
+		t[nt].hits = 0;
+		nt++;
+	}
+	return nt;
+}
+
+static u64 ss_relocate_buffer(u8* buf, size_t size, ss_reloc_tgt_t* t, int nt, u64* ambiguous) {
+	u64 fixed = 0;
+	if (!buf || !size) return 0;
+	for (size_t off = 0; off + 8 <= size; off++) {
+		u64 v;
+		int m = -1, amb = 0;
+		s64 delta = 0;
+		memcpy(&v, buf + off, sizeof v);
+		if (v < SS_NOISE_FLOOR) continue;   /* packed game data */
+		if (v >> 48) continue;              /* two packed u32s */
+		for (int i = 0; i < nt; i++) {
+			if (v < t[i].lo || v >= t[i].hi) continue;
+			if (m < 0) {
+				m = i;
+				delta = t[i].delta;
+			} else if (t[i].delta != delta) {
+				amb = 1;   /* two regions moving differently claim it */
+				break;
+			}
+		}
+		if (m < 0) continue;
+		if (amb) {
+			(*ambiguous)++;
+			continue;
+		}
+		v = (u64)((s64)v + delta);
+		memcpy(buf + off, &v, sizeof v);
+		t[m].hits++;
+		fixed++;
+	}
+	return fixed;
+}
+
+/* Translate every payload buffer onto this process' layout. No-op when all
+ * deltas are zero (same process). Called from ss_read_slot() after the file
+ * hash verified and before the snapshot can be applied. */
+static void ss_relocate_snapshot(void) {
+	ss_reloc_tgt_t t[SS_RELOC_MAX];
+	int nt = ss_build_reloc_targets(t, SS_RELOC_MAX);
+	int moving = 0;
+	for (int i = 0; i < nt; i++)
+		if (t[i].delta) moving = 1;
+	if (!moving) {
+		SSLOGI("relocate: layout identical to capture, nothing to fix");
+		return;
+	}
+	long long t0 = ss_now_ms();
+	u64 ambiguous = 0, fixed = 0;
+	for (int id = 0; id < SS_RGN_COUNT; id++) {
+		size_t n = 0;
+		u8* buf = ss_region_payload(id, &n);
+		if (!buf || !n) continue;
+		fixed += ss_relocate_buffer(buf, n, t, nt, &ambiguous);
+	}
+	SSLOGI("relocate: fixed=%llu ambiguous=%llu targets=%d in %lldms",
+	       (unsigned long long)fixed, (unsigned long long)ambiguous, nt, ss_now_ms() - t0);
+	for (int i = 0; i < nt; i++)
+		SSLOGI("relocate: %s saved=%p..%p delta=%lld hits=%llu", t[i].name,
+		       (void*)t[i].lo, (void*)t[i].hi, (long long)t[i].delta,
+		       (unsigned long long)t[i].hits);
+}
+
 /* ---- save ---- */
 
 /* Returns the status code the caller should publish. It deliberately does not
@@ -850,9 +1058,10 @@ static int ss_write_slot(int slot) {
 	u64 payload = 0;
 	u64 h = SS_FNV_OFFSET;
 	for (int id = 0; id < SS_RGN_COUNT; id++) {
-		payload += rec[id].size;
 		size_t n = 0;
 		u8* buf = ss_region_payload(id, &n);
+		if (!n) continue;
+		payload += n;
 		h = ss_hash_bytes_raw(h, buf, n);
 	}
 
@@ -1005,25 +1214,14 @@ static int ss_read_slot(int slot) {
 		return 0;
 	}
 
-	/* Phase 2a stores raw absolute addresses, so a file written by another
-	 * process cannot be restored here: ASLR moved every region, and memcpying
-	 * those pointers back would hand the engine a dead layout. Reject it with a
-	 * distinct code — phase 2b's relocation pass is what removes this gate. */
-	for (int id = 0; id < SS_RGN_COUNT; id++) {
-		uintptr_t live_base;
-		u64 size, len;
-		s64 cursor;
-		if (!rec[id].base) continue;
-		ss_region_live(id, &live_base, &size, &len, &cursor);
-		if (live_base && live_base != rec[id].base) {
-			SSLOGI("slot %d: region %s moved since capture (saved=%p live=%p delta=%td) "
-			       "— cross-process restore needs phase 2b",
-			       slot, ss_region_name(id), (void*)rec[id].base, (void*)live_base,
-			       (ptrdiff_t)(live_base - rec[id].base));
-			atomic_store(&ss.status, 10);
-			return 0;
-		}
-	}
+	/* Phase 2b: raw absolute addresses only stay valid inside the process
+	 * that wrote them. Record each region's saved base and translate every
+	 * pointer-sized value in the payloads onto this process' layout — for a
+	 * same-process load every delta is zero and the pass is a no-op. A region
+	 * with no live counterpart was already rejected by the size check above. */
+	for (int id = 0; id < SS_RGN_COUNT; id++)
+		ss.saved_base[id] = rec[id].base;
+	ss_relocate_snapshot();
 
 	ss.seg_file_base = rec[SS_RGN_SEG].base;
 	for (int i = 0; i < SS_POOL_COUNT; i++) {
@@ -1046,8 +1244,8 @@ static int ss_read_slot(int slot) {
 	ss.meta_num_level = (s16)hdr.level;
 	ss.has_snapshot = 1;
 
-	/* Every recorded address matched this process' layout, so the deltas are 0
-	 * by construction (the check above rejected anything else). */
+	/* The payloads now hold this process' addresses, so ss_do_load() can
+	 * apply them without further address work. */
 	SSLOGI("slot %d read: world=%d level=%d payload=%lluK in %lldms stamp=%08x",
 	       slot, (int)hdr.world, (int)hdr.level,
 	       (unsigned long long)(hdr.payload_bytes / 1024), ss_now_ms() - t0, hdr.stamp);
@@ -1145,6 +1343,14 @@ static void ss_do_load(void) {
 		ogg_cd_track = live_ogg;
 		if (!ogg_cd_track.decoder) is_ogg_playing = false;
 	}
+	/* The restored voices may still point into the sound banks as they were
+	 * at capture (snd_t::data into bnkDataFixe/bnkDataWorld); across a
+	 * restart those buffers are gone, so silence everything — the next sound
+	 * resolves its sample through the live bank again. Also sync the second
+	 * pointer to the tchatch buffer, which the segment restore rewound. */
+	stop_all_snd();
+	if (ptrTchatch && TchachPerduPtr == ss.aud_ptr_tchatch)
+		TchachPerduPtr = ptrTchatch;
 
 	/* Don't leave keys stuck from the moment of the snapshot. */
 	memset(Touche_Enfoncee, 0, sizeof(Touche_Enfoncee));
@@ -1153,11 +1359,70 @@ static void ss_do_load(void) {
 	SSLOGI("loaded: world=%d level=%d", (int)num_world, (int)num_level);
 }
 
+/* ---- armed resume (phase 2b) ----
+ *
+ * The engine only accepts a snapshot on a gameplay frame of the matching
+ * world/level. Right after a process restart it is standing in the menus, so
+ * Java arms the resume (once the user confirmed), and two one-line hooks in
+ * display.c walk it in: on the world map, WORLD_CHOICE() returns immediately
+ * (new_world = 1), and after DETER_WORLD_AND_LEVEL()/SELECT_LEVEL() have
+ * derived their own pick, num_world_choice/num_level_choice are pinned to
+ * the snapshot's world/level. The engine then reloads that level normally
+ * (DEPART_WORLD -> LoadBnkWorld -> DEPART_LEVEL -> INIT_MOTEUR_LEVEL) and the
+ * first gameplay frame applies the snapshot. If the steering is missed the
+ * resume is not lost: the same match check runs every frame, so walking to
+ * the level by hand also triggers it. */
+
+static void ss_try_armed_apply(void) {
+	if (!ss.armed || ss.arm_delivered) return;
+	if (!ss_in_gameplay()) return;
+	if (num_world != ss.arm_world || num_level != ss.arm_level) return;
+	/* One attempt only: retrying a failed load every frame would spam. */
+	ss.arm_delivered = 1;
+	SSLOGI("armed resume: applying slot %d at world=%d level=%d",
+	       ss.arm_slot, (int)num_world, (int)num_level);
+	if (ss_read_slot(ss.arm_slot))
+		ss_do_load();
+}
+
+void savestate_arm(int slot) {
+	int world = 0, level = 0, usable = 0;
+	long long created = 0;
+	if (savestate_slot_info(slot, &world, &level, &created, &usable) != 1 || !usable) {
+		SSLOGI("armed resume: slot %d unusable, not armed", slot);
+		ss.armed = 0;
+		ss.arm_delivered = 1;
+		return;
+	}
+	ss.arm_slot = slot;
+	ss.arm_world = world;
+	ss.arm_level = level;
+	ss.arm_delivered = 0;
+	ss.armed = 1;
+	SSLOGI("armed resume: slot %d -> world=%d level=%d", slot, world, level);
+}
+
+void savestate_worldmap_hook(void) {
+	if (!ss.armed || ss.arm_delivered) return;
+	/* WORLD_CHOICE() returning nonzero is exactly what SYNCHRO_LOOP() is
+	 * waiting for: leave the map on the very first frame. */
+	new_world = 1;
+}
+
+void savestate_pick_level_hook(void) {
+	if (!ss.armed || ss.arm_delivered) return;
+	num_world_choice = ss.arm_world;
+	num_level_choice = ss.arm_level;
+}
+
 /* ---- entry points ---- */
 
 void savestate_frame_hook(void) {
 	int op = atomic_exchange(&ss.request, SS_OP_NONE);
-	if (op == SS_OP_NONE) return;
+	if (op == SS_OP_NONE) {
+		ss_try_armed_apply();
+		return;
+	}
 	int slot = atomic_exchange(&ss.request_slot, -1);
 	SSLOGI("frame hook: op=%d slot=%d at frame boundary", op, slot);
 	if (op == SS_OP_SAVE_TO_SLOT) {
@@ -1177,6 +1442,12 @@ void savestate_frame_hook(void) {
 
 void savestate_request(int op, int slot) {
 	SSLOGI("request: %s slot=%d", op == SS_OP_SAVE_TO_SLOT ? "save" : "load", slot);
+	/* A manual action is the player taking control: drop a pending resume. */
+	if (ss.armed && !ss.arm_delivered) {
+		SSLOGI("armed resume cancelled by manual request");
+		ss.armed = 0;
+		ss.arm_delivered = 1;
+	}
 	atomic_store(&ss.request_slot, slot);
 	atomic_store(&ss.request, op);
 }

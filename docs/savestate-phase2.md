@@ -60,6 +60,9 @@ Phase 1 里"段 + 5 池 + 2 个堆块 + 4 个音频指针"这套零散记录，�
 
 ### 两遍重定位（关键正确性设计）
 
+> **⚠ 2b 实现时已修正此方案**：落地的是"按值分类、加目标区 delta"的单遍扫描（字节粒度），
+> 不是下面的两遍歧义表；原因与正确性论证见 §10。下面保留原文供对照。
+
 朴素做法"逐槽判断落在哪个区域就加那个 delta"有一个隐藏错误：**快照内部自引用的指针**
 （槽 X 指向同一快照里的槽 Y，例如全局指向全局、池 A 指向池 B 的块）在源和目标一起搬移时
 delta 必须为 0 —— 而朴素做法会对它们加上目标区域的 delta，把正确的内部指针改坏，还悄无声息。
@@ -163,8 +166,9 @@ payload: 按 region 顺序拼接的 COPY 内容（raw，不压缩）
 
 - **2a（可独立交付）✅ 已完成（2026-10-06 模拟器验收，实测记录见 §9）**：区域表重构 + 落盘/读盘 + 版本/`stamp`/payload 哈希校验 + 多槽 UI + 指针分类探针。
   同会话内"存到槽位 → 读回"即可全流程验证（地址未变，重定位走 delta=0 分支），风险低。
-- **2b**：两遍重定位 + `ADDRESS_ONLY` 区域接表 + armed resume 编排 + 真机跨进程验收。
-- **2c（顺带）**：即时存档文件走现有 SAF 导出/导入通道，同 `stamp` 的设备间可共享。
+- **2b ✅ 已实现（2026-10-14，代码 + 构建通过；实现记录见 §10，待用户真机/模拟器手动验收）**：
+  按值分类重定位（字节粒度）+ `ADDRESS_ONLY` 区域接表 + armed resume 启动编排（启动弹窗确认）。
+- **2c**：即时存档文件走现有 SAF 导出/导入通道，同 `stamp` 的设备间可共享。
 
 ## 6. 验证清单
 
@@ -172,9 +176,9 @@ payload: 按 region 顺序拼接的 COPY 内容（raw，不压缩）
    `world/level` 与画面一致。
 2. ✅（模拟器，见 §9）2a：APK 重装（同版本同签名，进程重启）后读旧文件 → 因 ASLR **不应**被允许
    直接应用；验证 `stamp` 命中但重定位失败路径不崩（2b 前该用例提示"该存档来自另一次运行"）。
-3. 2b：存 → 完全杀掉进程 → 重开 → 自动引导 → 恢复到原位（生命/Tings/敌人/计时全回滚）。
-4. 2b：存 A 世界 → 杀掉 → 重开 → 引导恢复；音效正常（`COPY_RELOAD` delta 路径）。
-5. 2b：`stamp` 不符（换新 APK）→ 状态码 9 拒绝，无崩溃。
+3. 2b：存 → 完全杀掉进程 → 重开 → 弹窗确认 → 自动引导 → 恢复到原位（生命/Tings/敌人/计时全回滚）。
+4. 2b：存 A 世界 → 杀掉 → 重开 → 引导恢复；音效正常（bank 重载路径 + 恢复后 `stop_all_snd()`）。
+5. 2b：`stamp` 不符（换新 APK）→ 状态码 9 拒绝（"版本不符"），无崩溃。
 6. ✅（模拟器，见 §9）探针：三类命中数稳定，未知 rw 命中数为 0。
 7. ✅（模拟器，见 §9）连续 10 次存读内存不增长；单次 dump/load 的帧耗时（写 5.9 MB）可接受。
 
@@ -265,11 +269,83 @@ pool=[2286,314,53,627,0] heap_other=1385 mapped_other=479 unmapped=8427 noise_lo
 `src/savestate.c` +865、`src/savestate.h` +29、`android_jni.c` +32、`RayverseActivity.java` +84，
 新增本文档；引擎核心文件与 `engine.c` 零改动，全部仍在 `#ifdef ANDROID` 内。
 
-### 留给 2b 的待办（按探针结论排）
+### 留给 2b 的待办（按探针结论排）→ 已按此实施，落地形态见 §10
 
-1. 两遍重定位：delta 来源 = 模块基址 + 区域表 `saved_base`；`self` 与歧义槽保持原值。
-2. `ADDRESS_ONLY` 接表：jumelle 四张表 + `EffetBufferNormal` + `Def_Bande`，各自一个
-   "存档地址 → 本进程等价块"映射。
-3. armed resume 启动编排（§4）。
-4. 探针在**其他世界/关卡、特效进行中、CD 音乐播放中**复跑一遍 —— 本轮数据只覆盖世界 1 关卡 1
-   的一个静态时刻，函数指针表可能在别的关卡被填进新的全局。
+1. ~~两遍重定位~~ → 单遍"按值分类"重定位（字节粒度），见 §10-1 的修正说明。
+2. `ADDRESS_ONLY` 接表 ✅：jumelle 四张表 + `EffetBufferNormal` + `Def_Bande`。
+3. armed resume 启动编排 ✅（§4 的变体：启动弹窗确认后自动引导，见 §10-4）。
+4. 探针在**其他世界/关卡、特效进行中、CD 音乐播放中**复跑一遍 —— 仍待做；本轮数据只覆盖
+   世界 1 关卡 1 的一个静态时刻，函数指针表可能在别的关卡被填进新的全局。
+
+## 10. 2b 实现记录（2026-10-14；代码 + 构建完成，待手动验收）
+
+改动足迹：`src/savestate.c`（重定位 + 区域表扩展 + armed 编排）、`src/savestate.h`、
+`src/proto.h`（2 个 hook 声明）、`src/display.c`（2 行 `#ifdef ANDROID` hook）、
+`android_jni.c`（`nativeArmSaveState`）、`RayverseActivity.java`（启动弹窗 + armed 轮询）。
+引擎核心逻辑零改动。文件格式升到 **fmt=2**，2a 的旧槽文件会被拒（状态码 9，UI 显示"版本不符"）。
+
+### 10.1 与 §1 设计的两处修正（实现时定，理由如下）
+
+1. **重定位是"按值分类、加目标区 delta"，不是两遍歧义表**。§1 说"内部自引用 delta 必须为 0"
+   ——该结论只在同进程（所有 delta=0）时成立。正确语义是标准指针搬移：
+   `v += (live_base - saved_base)`，delta 由**值指向的区域**决定；段内自引用（global→global）
+   要加的正是段自己的 delta，跨进程时它不是 0。目标按精确分配跨度登记、互不重叠，
+   "歧义"只剩一种真实情形：两个 **delta 不同**的区域同时认领一个值 —— 这种槽保持原值并计数
+   （`relocate: … ambiguous=N`，预期 0 或个位数）。段与 libmain text 目标互相重叠但
+   delta 恒相同（同一模块同一偏移），按同一答案处理。
+2. **扫描是字节粒度，不是 8 字节对齐**。`obj_t` 是 `#pragma pack(1)` 的 **155 字节**结构，
+   数组里 7/8 的元素其指针字段落在非对齐偏移（`mapobj[25]`、`ray`/`raylittle`、
+   `level.objects` 全是 obj_t 数组），2a 探针只扫对齐槽、只看到其中 1/8。字节粒度的
+   混合读（移位重叠）误报由地址形态兜底：真实指针是 `0x0000_7xxx_xxxx_xxxx`，移位读出的
+   混合值要么 <2^40（噪声地板）、要么 ≥2^48（打包 u32 对）、要么高低半字落在区域窗口的
+   错误位置。期望误判 ≪1；判据仍是恢复后能正常玩，`relocate:` 的 hits 明细可对照 §9 基线
+   （libmain 千级、pool 数千级、seg 百级）。
+
+### 10.2 区域表扩展与文件格式 v2
+
+- 新增 6 个 `ADDRESS_ONLY` 区域：`EffetBufferNormal`(128000)、`DistPointX`、`DistPointY`、
+  `ExpPoint`、`JumelleZoomDef`、`Def_Bande` —— 只存"存档时地址 + 跨度"，无 payload；
+  重定位把快照里指向它们的引用映射到本进程的同名块。
+- **`rec.size` 语义改为地址跨度**：池 = `sizeof(mem_t) + capacity`（引擎的池全局指向 header，
+  且 bump 分配可能用满数据区最后几字节），payload 仍只含 `data[0..capacity)`；
+  seg/flocon/rvb 跨度 = payload。`SS_RGN_COUNT` 8 → 14，`SS_FMT_VERSION` 1 → 2。
+- 重定位目标 = 14 个区域 + `libmain` text/rodata/relro 跨度（delta = 段 delta，由
+  `dl_iterate_phdr` 的 PT_LOAD 并集给出）。
+- 音频不进区域表：沿用 Phase 1 的"对比-回填-重载"，另加恢复后 `stop_all_snd()` 清掉
+  `snd_t::data` 里指向旧 bank 的残留指针（下一次发声按活 bank 重新解析），并同步
+  `TchachPerduPtr`。
+
+### 10.3 重定位时机与状态码
+
+`ss_read_slot()` 在 payload 哈希校验通过后、`ss_do_load()` 应用前执行重定位（就地改
+快照缓冲）；同进程所有 delta=0 直接跳过。某区域"存档有、本进程无"仍由大小校验挡下 →
+**状态码 10 语义收窄为"无法映射到本进程"**（不再是"来自另一次运行"，跨进程已被支持）。
+
+### 10.4 armed resume（§4 的落地变体）
+
+- **触发**：`RayverseActivity.onCreate` 弹窗"检测到即时存档（世界w-关卡l · 时间）"，
+  [恢复] 才 `nativeArmSaveState(slot)`（选 epoch 最新的可用槽）；[不用] 则一切照旧。
+  （用户拍板：启动引导需要确认，不劫持正常游玩。）
+- **引导**：两个一行 hook（均 `#ifdef ANDROID`）——`WORLD_CHOICE()` 顶部 `new_world = 1`
+  （世界地图第一帧即退出），`DO_WORLD_MAP()` 在 `DETER_WORLD_AND_LEVEL()`/`SELECT_LEVEL()`
+  之后钉住 `num_world_choice/num_level_choice`（DETER 会用光标奖章覆盖这两个值，必须后钉）。
+  引擎随后自然走 `DEPART_WORLD → LoadBnkWorld → DEPART_LEVEL → INIT_MOTEUR_LEVEL`。
+- **应用**：目标关第一帧（`ss_in_gameplay()` 且 world/level 匹配）读档 + 重定位 + 应用；
+  引导失败不丢档 —— 同一匹配检查每帧都在，手动走到该关也会触发。手动存/读档会取消 armed。
+- 已知边界：`DETER_WORLD_AND_LEVEL()` 的副作用（`enter_casse_brique()`、`You_Win` 分支）用的是
+  钉住前的光标值，极端情形（光标停在蛋糕奖章且已通关）可能走结局流程；引导不看
+  `t_world_info` 解锁状态，直接加载目标关。
+
+### 10.5 手动验收清单
+
+1. **同会话回归**（2a 用例）：关卡中存槽 1 → 走动/死亡 → 读槽 1 精确回滚；日志应有
+   `relocate: layout identical to capture, nothing to fix`。
+2. **跨进程**：存槽 1 → 杀掉进程（或 `adb force-stop`）→ 重开 → 弹窗[恢复] → 自动进目标关
+   → 位置/Lums/生命/Tings 回滚，继续玩正常，无 SIGSEGV（`adb logcat -d -b crash` 为空）。
+3. **日志判据**（`Rayverse-SS:V`）：`armed resume: slot N -> world=W level=L` →
+   `armed resume: applying slot N at world=W level=L` → `relocate: fixed=… ambiguous=… targets=15`
+   → 每目标 `delta/hits` 明细 → `loaded: world=W level=L`。`libmain` hits 千级、pool 数千级、
+   seg 百级、`ambiguous`≈0（对照 §9 探针基线）。
+4. **音效**：跨进程恢复后音效/音乐正常（bank 重载路径）。
+5. **弹窗[不用]**：正常进游戏不被打断；之后手动存/读档正常（armed 已取消）。
+6. **版本不符**：换新构建（`stamp` 变）→ 旧槽文件标"版本不符"，读档拒绝（状态码 9），不崩。

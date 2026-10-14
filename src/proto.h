@@ -1602,6 +1602,9 @@ float get_seconds_elapsed(s64 start, s64 end);
 #ifdef ANDROID
 // savestate.c (Android-only instant save/load, hooked from advance_frame)
 void savestate_frame_hook(void);
+// phase 2b armed resume steering, hooked from display.c
+void savestate_worldmap_hook(void);
+void savestate_pick_level_hook(void);
 #endif
 // sound.c
 void lock_audio(void);
