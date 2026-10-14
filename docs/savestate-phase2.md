@@ -349,3 +349,168 @@ pool=[2286,314,53,627,0] heap_other=1385 mapped_other=479 unmapped=8427 noise_lo
 4. **音效**：跨进程恢复后音效/音乐正常（bank 重载路径）。
 5. **弹窗[不用]**：正常进游戏不被打断；之后手动存/读档正常（armed 已取消）。
 6. **版本不符**：换新构建（`stamp` 变）→ 旧槽文件标"版本不符"，读档拒绝（状态码 9），不崩。
+
+## 11. armed resume 移除 + 读档偏色修复（2026-10-14）
+
+### 11.1 armed resume 启动引导已移除
+
+用户拍板：功能只做到"关卡游玩中手动存/读档"，不支持从任意界面读档，因此
+启动时的"检测到即时存档 → 是否恢复"弹窗与配套的引擎引导全部拆掉：
+
+- `RayverseActivity.java`：`offerArmedResume()`（onCreate 调用）、`pollArmedStatus()`、
+  `stopArmedPoll()`、`nativeArmSaveState` 声明；
+- `android_jni.c`：`nativeArmSaveState` JNI 入口；
+- `src/savestate.c`：`ss.armed/arm_slot/arm_world/arm_level/arm_delivered` 字段、
+  `ss_try_armed_apply()`、`savestate_arm()`、`savestate_worldmap_hook()`、
+  `savestate_pick_level_hook()`、`savestate_request()` 里的 disarm 分支；
+- `src/savestate.h` / `src/proto.h`：对应声明；`src/display.c`：两处 `#ifdef ANDROID` hook。
+
+跨进程恢复能力（按值分类重定位）**保留**：重开后手动进任意关卡，再在游戏中
+「即时读档」即可恢复该槽（§10.3 的路径不变）。`ss_ctx_t` 变窄引发的旧槽
+"版本不符"由 §11.3 的占位修复兜底，旧档恢复可读。
+
+### 11.2 读档后画面严重偏色（已修）
+
+**症状**：关卡中读即时存档后颜色严重失真，游戏可正常玩，到下一关自行恢复。
+
+**根因**：真正送显的调色板是 `global_app_state.game.draw_palette`
+（`engine.c:75` 的 blit 用它，`SetPalette()` 是唯一写入方，`misc_source.c:49`），
+而 `global_app_state` 是平台持有状态，恢复快照时被**刻意排除**（备份-回填）。
+游玩稳态下引擎不逐帧 SetPalette（只在关卡加载/淡入淡出/调色板交换器/特效时调），
+所以读档后 draw_palette 里还是**读档前那一关**的调色板，恢复出的像素索引按错表上色；
+逻辑状态都在数据段里、完整恢复，所以游戏照玩；下一关加载走
+`actualize_palette`/fade-in 重新 SetPalette，于是自愈。"有时候"才出现，是因为读
+**同一关**的存档时两边调色板碰巧一致。
+
+**修复**：`ss_do_load()` 恢复完成后补一行 `SetPalette(&current_rvb, 0, 256)`，
+把快照的当前调色板重新上传。fade 中途/闪电特效等情形由恢复出的 `fade`/`nb_fade`/
+`rvb_fade`/`numero_palette_special` 状态在后续帧自然接管。
+
+### 11.3 "版本不符"不能简单放开：布局冻结与 reserved_layout 占位
+
+§11.1 拆掉 armed resume 后旧槽显示"版本不符"，曾判断为"stamp 误伤、可安全放开"。
+**实测否定了这个判断**：对 f19224c（含 armed 字段）与新代码各编一份 libmain.so，
+导出全部 1479 个数据符号并按 `num_world` 归一化对比，发现 `ss` 之后有 **214 个
+符号整齐下移 24 字节**（5 个 int 字段 + 尾部对齐 = 24）。`ss` 位于被快照的数据段
+中段（`savestate.c` 在 unity build 的 include 顺序里排中间，后面还有 saxo/screen/
+skops/special/stoneman/trumpet/ufo 的全局量），`ss_ctx_t` 一变窄，后面的引擎全局量
+整体平移 → 旧槽的字节按旧偏移写回就是真错位，stamp 拒绝是**正确**的，不能删。
+
+**修复**（在保留 armed 移除的前提下让旧档可读）：`ss_ctx_t` 里原地补
+`s64 reserved_layout[3]`（24 字节占位），`sizeof(ss_ctx_t)` 回到 544。重编后逐符号
+对比：被快照的大 RW 段 `p_memsz` 回到 `0x62f28`、段内 1479 个符号偏移与 f19224c
+**完全一致**（仅 RELRO 小段的 `_DYNAMIC`/`__dso_handle` 等 3 个符号有差，该段不在
+快照范围内），stamp 随之与旧版相同 → 旧槽通过校验、读档字节布局也真的一致。
+
+**结论/纪律**：
+
+- stamp 校验**保留**。它不是版本号洁癖，是唯一能在读档前发现"布局真变了"的手段；
+  区域 size 检查（status 10）只能兜住段长变化，兜不住段内平移。
+- **`ss_ctx_t` 的尺寸从此冻结**：增删字段前必须同步调整 `reserved_layout` 保持
+  sizeof 不变，否则同版本号下的所有槽文件作废。`global_app_state` 等被排除段的
+  结构体同理（它们也参与 stamp 与段内偏移）。
+- 验证手法可复用：`llvm-nm --defined-only` 导出 B/D/b/d 符号 → 按某个引擎全局量
+  归一化 → diff；一致即旧档兼容。
+
+### 11.4 跨进程读档真机崩溃：重定位的两个地址门槛在真机形态下全灭（已修）
+
+**症状**：装新版（§11.3 的 reserved_layout 已生效，旧槽校验通过、列表可见）后，
+关卡中读档直接崩溃。tombstone：`SIGSEGV / SEGV_ACCERR` 写 0x6d8c5240e8，
+栈 `SetPalette ← ss_do_load ← savestate_frame_hook ← advance_frame`。
+§11.2 补的 `SetPalette(&current_rvb, 0, 256)` 是恢复后第一个解引用"快照里的全局
+指针"（`global_game`）的调用点，所以崩在这里——崩点本身不是病因。
+
+**根因**：`ss_relocate_buffer()` 的两个门槛只认模拟器上的地址形态，真机上把
+**所有**需要修的指针都滤掉了（fixed=0），快照写回的全是存档进程的旧地址：
+
+1. `SS_NOISE_FLOOR = 2^40`："低于 2^40 是打包数据"。真机 ASLR 把 libmain 放在
+   0x006d_8c…（槽文件实测 `rec[0].base = 0x6d8c518a80`），段内/模块指针 ≈2^38.6，
+   全部低于门槛 → 跳过。崩溃写地址 0x6d8c5240e8 = 槽0 seg base + 0xB668，正是旧
+   进程 `&global_app_state.game.draw_palette` 在段内的位置——`global_game` 被原样
+   写回的铁证。
+2. `if (v >> 48) continue;`：bionic 分配器给堆指针带 TBI 标签（top byte 0xb4…），
+   槽文件里所有池/堆块 base 形如 `0xb400006d9b92e7e0`，hdr.aud[] 同样带标签 →
+   全部被当"两个打包 u32"跳过。
+
+§11.2 的"偏色但能玩"是**同进程**读档（delta 全 0，直接跳过重定位），所以这条路径
+从没被踩过；跨进程读档（换版本安装、重开进程后手动进关读档）第一次真跑就撞上。
+模拟器验收能过是因为 ndk_translation 下模块落在 0x7xxx…（2^46.8，高于 2^40）且
+分配器不带标签——探针注释里"real pointers are 0x0000_7xxx…"就是被那个形态误导的。
+
+**修复**：窗口匹配改在**低 56 位**上做（`SS_PTR_TAG_MASK = 0x00FF_FFFF_FFFF_FFFF`），
+匹配后按活动区域基址的 top byte 重新打标签。TBI 下 CPU 忽略 top byte，但指针与
+活对象的相等比较不忽略，所以回填要比裸加 delta 干净。噪声过滤只留 `v < 0x10000`；
+安全性来自窗口本身：移位错读出的值距任何窗口至少差 256 倍，打包数据撞上
+~15 MB/2^56 的窗口是 2^-32 量级。探针（`ss_probe_classify`/`ss_probe_buffer`）同步
+改成 masked 匹配，且分类提到 nonaddr 门**之前**，否则真机上带标签的堆指针又会被
+记成噪声。
+
+**离线验证**（拉真机槽文件 `rayverse_ss_0.bin` 直接模拟匹配逻辑）：22,981 个命中
+（seg 自引用 121 + 各池指针 + 每个 address-only 块恰好 1 个全局指针），8 字节对齐
+21,487 / 非对齐 1,494；非对齐命中 100% 是孤立的结构化字段（步长 8/32/280…，obj_t
+打包布局），与对齐命中**零字节重叠**——没有一个移位伪影会被误改。
+
+### 11.5 跨版本读档再闪退：模块 delta 修不了代码偏移 —— keep-live 修复（2026-10-14，真机验收通过）
+
+**症状**：§11.4 修复装上后，同版本新槽存/读完全正常，但**旧版本写的槽**在关卡中
+读取仍闪退。tombstone 形态与 §11.4 完全不同：`SEGV_ACCERR / trying to execute
+non-executable memory`，pc == lr == 0x6d8717f8a8，而该地址落在**活数据段内**
+（live seg base 0x6d87174358，段内偏移 +0xB550），nm 定位它就是
+`global_app_state` 本身——CPU 把一个数据地址当代码执行了。
+
+**排查过程（方法链可复用）**：
+
+1. **抓现场**：`adb logcat -v threadtime > repro.log` 后台全量落盘（不怕缓冲区
+   被冲掉）。这次拿到了完整运行日志：`relocate: fixed=11679 ambiguous=0
+   targets=14`、各窗口 delta/hits、`loaded: world=1 level=9`，2 ms 后 SIGSEGV。
+   重定位本身是好的，崩溃在恢复完成之后。
+2. **完整 tombstone**：logcat 只有崩溃头；`adb shell dumpsys dropbox --print
+   SYSTEM_TOMBSTONE` 能取到全文，**含 memory near sp** ——这是关键。栈上的
+   {fp, lr} 帧记录里，最内层帧的 saved-lr 槽 = `&global_app_state`，x29 槽高位
+   被打坏（低 32 位还是个栈地址）——"ret 进被砸坏的返回地址"签名。pc == lr 正是
+   `ret` 的特征（若是 `blr` 跳飞，lr 会是调用点+4）。
+3. **调用链还原**：栈上 6 个返回地址减模块基址转成偏移，`llvm-nm -n` 反查最近
+   符号：`DO_MAIN_LOOP_PC_NORMAL+0x324 → DO_GROS_MOTEUR_NORMAL+0x70 →
+   DO_MOTEUR+0x27c → DO_OBJECTS+0x214 → DO_PNG_COLL_STONEMAN+0xb0 →
+   skipToLabel+0x48`（x8=skipSpeedArgs+0x18、x17=skipOneCommand）——崩在**对象
+   脚本解释器**。寄存器 x2=0x140、x3=0xc8 就是 320×200，blit 参数。
+4. **旧档 vs 新 build 偏移对比（决定性证据，不需要旧二进制）**：槽文件里的函数
+   指针值减 saved 模块基址（= `rec[0].base - 0x111358`）就是**旧 build 的代码偏移**。
+   `cptr_tab[0].skip` = 0x77974，当前 build 的 `skipOneArg` 在 0x77dac——代码布局
+   挪了 **+0x438**。unity build 里 savestate.c 排在 objupdate.c/stoneman.c 之前，
+   改 savestate.c 就让其后所有函数平移。
+5. **危险面盘点**（决定修复面是否可枚举）：扫槽文件 seg 载荷里全部"模块代码/只读
+   段指针"，共 **1654 个、全部 8 字节对齐**，按存储位置归类到符号：
+   - `ObjectsFonctions` 1310（262×5）、`cptr_tab` 102（34×3）——两张从不写入的常量表；
+   - `key_descriptions_azerty/qwerty` 39+39（字符串指针）、`calcblocfloor/1/2/recal`
+     4×31、`load_level.world_names` 6、`options_jeu` 4；
+   - 运行时赋值的全局：`TEST_KEY_BUTTON0..3`、`Copy_Plan0_To_Buf`、`anim_func`、
+     `pINIT_*`，以及 `DrawSprite*EtX`/`drawflocon*NormalETX` 等绘制分发（各 1）。
+   再扫 5 个池 + flocon + rvb 载荷：**模块指针 = 0**（obj_t 的 sprites/animations/
+   eta/cmds 全是 seg/池/堆引用）。危险面完全收敛在数据段。
+
+**根因**：模块 delta 只修 ASLR，修不了**两个 build 之间的代码/只读段布局偏移**。
+旧档的函数指针平移到新模块后落在别的函数中段 → 对象脚本引擎按错指令流跑 → 砸栈
+→ ret 进 `&global_app_state`。同版本读档没问题，因为偏移相同。
+
+**修复（keep-live）**：`ss_do_load()` 在数据段 memcpy 前后加一遍扫描：槽位值（活值
+或快照值任一）落在 `[mod_lo, seg_base)`——即代码/只读/RELRO 引用——恢复后**保留
+本进程活值**，与 `global_app_state` 同属"平台/二进制持有"状态：
+
+- 常量表 → 天然是本 build 的正确函数/字符串；
+- 运行时赋值的（绘制分发、TestKey*、anim_func、pINIT_*）→ 保留当前进程的输入
+  配置/屏幕模式——这些本来就不是游戏进度，语义上就该用活值；
+- 字符串表 → 本 build 的正确字符串。
+
+**为什么完备**：数据布局由 stamp 冻结兜住（§11.3）；池/堆内容零模块指针（盘点 5）；
+数据段里的模块指针全部被 keep-live 覆盖。于是**跨版本、跨进程、跨设备**读档都不再
+依赖"两个 build 代码一致"，且不需要改文件格式——旧槽直接可读。
+
+**验收**：真机装新包后读旧版本槽（world 1 level 9），成功恢复、无闪退（2026-10-14
+用户确认）。日志出现 `load: kept N code/rodata references live`（N≈1654）。
+
+**纪律**：
+
+- 新增函数指针/字符串指针全局**无需登记**，keep-live 按值域自动覆盖；但若将来
+  **池里的结构新增指向 .rodata 的字段**，会突破"池零模块指针"的前提，必须重新评估。
+- `ss_ctx_t` 尺寸冻结（§11.3）不变；stamp 校验保留（数据布局真变时仍要拒绝）。

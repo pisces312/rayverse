@@ -27,10 +27,7 @@
  * Phase 2b (this file): a slot written by another process is restored too.
  *   ASLR has moved every address in it, so before the snapshot is applied
  *   every pointer-sized value in the payloads is translated from the saved
- *   region layout onto this process' one (ss_relocate_buffer); and an
- *   "armed resume" walks the engine into the snapshot's world/level first
- *   (savestate_arm + the two display.c hooks) so the apply happens on a
- *   normal gameplay frame of the right level.
+ *   region layout onto this process' one (ss_relocate_buffer).
  */
 
 #ifdef ANDROID
@@ -144,14 +141,12 @@ typedef struct {
 	atomic_int status;
 	int has_snapshot;
 
-	/* Armed resume (phase 2b): set from Java before the game thread starts,
-	 * consumed on the game thread. Lives inside ss so it survives the
-	 * segment restore (ss is backed up around it like the platform state). */
-	int armed;
-	int arm_slot;
-	int arm_world;
-	int arm_level;
-	int arm_delivered;
+	/* DO NOT REMOVE / RESIZE: ss lives inside the snapshotted data segment,
+	 * so sizeof(ss_ctx_t) is part of every engine global's offset that the
+	 * linker places after it — and of the layout stamp written into slot
+	 * files. These 24 bytes stand in for the removed armed-resume fields so
+	 * slots written by the phase-2b build stay byte-layout compatible. */
+	s64 reserved_layout[3];
 
 	uintptr_t seg_base;
 	size_t seg_size;
@@ -543,12 +538,20 @@ typedef struct {
 
 #define SS_MAP_MAX 1024
 #define SS_SAMPLE_MAX 6
-/* Values below this that match no region are treated as packed game data, not
- * as pointers: real arm64 Android user addresses observed here start around
- * 0x5e00_0000_0000, while the noise (two packed u32s, three u16s) stays under
- * 0x1000_0000_0000. Counted apart so the "unknown mapping" buckets stay
- * meaningful. */
-#define SS_NOISE_FLOOR (1ull << 40)
+/* bionic's allocator hands out TBI-tagged pointers (top byte 0xb4.. on the
+ * Magic8 Pro) and ASLR can place libmain anywhere in the low VA range
+ * (0x006d_8c51_8a80 for the data segment on one observed run), so neither
+ * "real pointers are 0x0000_7xxx_xxxx_xxxx" nor "anything under 2^40 is
+ * packed data" holds. What holds on every layout is that a pointer is
+ * recognizable by its low 56 bits landing inside a known region window:
+ * a shifted read of a real pointer sits a factor 256 away from every window,
+ * and packed game data hits a ~15 MB window out of 2^56 by chance only.
+ * The top byte is a memory tag, ignored by the CPU (TBI), and is re-applied
+ * from the live region base after the translate. */
+#define SS_PTR_TAG_MASK 0x00FFFFFFFFFFFFFFull
+/* Values below this that match no region are packed game data, not pointers.
+ * Counted apart so the "unknown mapping" buckets stay meaningful. */
+#define SS_NOISE_FLOOR 0x10000ull
 
 typedef struct {
 	uintptr_t value;
@@ -639,8 +642,13 @@ static void ss_probe_add_range(ss_probe_rng_t* set, uintptr_t lo, size_t size,
 }
 
 static int ss_probe_classify(const ss_probe_rng_t* set, uintptr_t v) {
+	/* Compare on the tag-stripped value: heap blocks carry TBI tags in both
+	 * the window bases and the pointers stored into the snapshot. */
+	u64 vm = (u64)v & SS_PTR_TAG_MASK;
 	for (int i = 0; i < set->n; i++)
-		if (v >= set->rng[i].lo && v < set->rng[i].hi) return i;
+		if (vm >= ((u64)set->rng[i].lo & SS_PTR_TAG_MASK) &&
+		    vm < (((u64)set->rng[i].lo & SS_PTR_TAG_MASK) + (set->rng[i].hi - set->rng[i].lo)))
+			return i;
 	return -1;
 }
 
@@ -667,26 +675,28 @@ static void ss_probe_buffer(ss_probe_t* pr, const ss_probe_rng_t* set,
 			pr->small++;
 			continue;
 		}
-		/* Anything at or above 2^48 cannot be a user address on arm64 Android,
-		 * so it is two packed 32-bit game values rather than a pointer. Without
-		 * this gate the raw scan drowns the real hits in that noise. */
-		if (v >> 48) {
-			pr->nonaddr++;
-			continue;
-		}
 		/* A pointer into the buffer being scanned is a snapshot-internal
 		 * reference: source and target move together across a restart, so its
 		 * delta must stay 0. Counted apart from the region table on purpose —
 		 * this is the bucket a naive relocation pass would silently corrupt. */
-		if (v >= self_lo && v < self_hi) {
+		if ((v & SS_PTR_TAG_MASK) >= ((uintptr_t)self_lo & SS_PTR_TAG_MASK) &&
+		    (v & SS_PTR_TAG_MASK) < ((uintptr_t)self_hi & SS_PTR_TAG_MASK)) {
 			pr->self++;
 			continue;
 		}
 		int idx = ss_probe_classify(set, v);
 		if (idx < 0) {
+			/* No region claims its low 56 bits. A junk top byte then means two
+			 * packed 32-bit game values rather than a pointer — on arm64
+			 * Android the real thing is either tag-free or carries an 0x80..
+			 * 0xbf allocator tag, and either way its address bits are mapped. */
+			if (v >> 48) {
+				pr->nonaddr++;
+				continue;
+			}
 			const char* name = NULL;
 			int rw = 0;
-			if (ss_find_map(maps, n_maps, v, &name, &rw) < 0) {
+			if (ss_find_map(maps, n_maps, v & SS_PTR_TAG_MASK, &name, &rw) < 0) {
 				pr->unmapped++;
 				if (v < SS_NOISE_FLOOR) pr->noise_low++;
 				ss_probe_sample(pr->s_unmapped, &pr->n_unmapped, off, v, NULL);
@@ -857,14 +867,22 @@ static void ss_run_probe(const char* why) {
  *
  * The scan is byte-granular on purpose: obj_t is a packed 155-byte struct,
  * so inside an obj_t array 7 of 8 elements hold their pointer fields at
- * unaligned offsets (the phase 2a probe only saw the aligned 1/8). Address
- * shapes make the overlaps safe: real pointers here are 0x0000_7xxx_xxxx_xxxx,
- * so a shifted read is either below the noise floor, above 2^48 (two packed
- * u32s), or has its halves in the wrong places for any region window. */
+ * unaligned offsets (the phase 2a probe only saw the aligned 1/8). Matching
+ * runs on the low 56 bits only: heap pointers carry an allocator TBI tag in
+ * the top byte (0xb4.. on the Magic8 Pro) while module addresses carry none,
+ * and ASLR can place either anywhere in the low VA range — libmain at
+ * 0x006d_8c.. on one observed run, where the old "below 2^40 is packed data"
+ * gate silently skipped every pointer and the first dereference of a restored
+ * global segfaulted. A shifted read of a real pointer lands a factor 256 away
+ * from every region window, and packed game data hits a ~15 MB window out of
+ * 2^56 only by accident, so the window test is the filter; the translated
+ * value is re-tagged with the live region's top byte (TBI ignores it, pointer
+ * equality against live values does not). */
 
 typedef struct {
-	u64 lo, hi;
-	s64 delta;
+	u64 lo, hi;     /* tag-stripped window */
+	u64 delta;      /* tag-stripped (live - saved), mod 2^56 */
+	u64 tag;        /* live base' top byte, re-applied after the shift */
 	const char* name;
 	u64 hits;
 } ss_reloc_tgt_t;
@@ -873,9 +891,9 @@ typedef struct {
 
 static int ss_build_reloc_targets(ss_reloc_tgt_t* t, int max) {
 	int nt = 0;
-	s64 seg_delta = 0;
+	u64 seg_delta = 0;
 	if (ss.saved_base[SS_RGN_SEG] && ss.seg_base)
-		seg_delta = (s64)((u64)ss.seg_base - ss.saved_base[SS_RGN_SEG]);
+		seg_delta = ((u64)ss.seg_base - ss.saved_base[SS_RGN_SEG]) & SS_PTR_TAG_MASK;
 	for (int id = 0; id < SS_RGN_COUNT && nt < max; id++) {
 		uintptr_t live;
 		u64 size, len;
@@ -883,9 +901,10 @@ static int ss_build_reloc_targets(ss_reloc_tgt_t* t, int max) {
 		u64 saved = ss.saved_base[id];
 		ss_region_live(id, &live, &size, &len, &cursor);
 		if (!saved || !live || !size) continue;
-		t[nt].lo = saved;
-		t[nt].hi = saved + size;
-		t[nt].delta = (s64)((u64)live - saved);
+		t[nt].lo = saved & SS_PTR_TAG_MASK;
+		t[nt].hi = t[nt].lo + size;
+		t[nt].delta = ((u64)live - saved) & SS_PTR_TAG_MASK;
+		t[nt].tag = (u64)live & ~SS_PTR_TAG_MASK;
 		t[nt].name = ss_region_name(id);
 		t[nt].hits = 0;
 		nt++;
@@ -894,11 +913,13 @@ static int ss_build_reloc_targets(ss_reloc_tgt_t* t, int max) {
 	 * collision callbacks, object behaviours) all live there and shift by the
 	 * very same bias as the data segment. The span also contains the segment
 	 * mapping itself — harmless, same delta, and the scanner treats equal
-	 * deltas as one answer. */
+	 * deltas as one answer. Module addresses are tag-free, so this target
+	 * re-tags to 0. */
 	if (seg_delta && ss.mod_lo < ss.mod_hi && nt < max) {
-		t[nt].lo = (u64)ss.mod_lo - (u64)seg_delta;
-		t[nt].hi = (u64)ss.mod_hi - (u64)seg_delta;
+		t[nt].lo = ((u64)ss.mod_lo - seg_delta) & SS_PTR_TAG_MASK;
+		t[nt].hi = t[nt].lo + ((u64)ss.mod_hi - (u64)ss.mod_lo);
 		t[nt].delta = seg_delta;
+		t[nt].tag = 0;
 		t[nt].name = "libmain";
 		t[nt].hits = 0;
 		nt++;
@@ -910,14 +931,14 @@ static u64 ss_relocate_buffer(u8* buf, size_t size, ss_reloc_tgt_t* t, int nt, u
 	u64 fixed = 0;
 	if (!buf || !size) return 0;
 	for (size_t off = 0; off + 8 <= size; off++) {
-		u64 v;
+		u64 v, vm;
 		int m = -1, amb = 0;
-		s64 delta = 0;
+		u64 delta = 0;
 		memcpy(&v, buf + off, sizeof v);
-		if (v < SS_NOISE_FLOOR) continue;   /* packed game data */
-		if (v >> 48) continue;              /* two packed u32s */
+		vm = v & SS_PTR_TAG_MASK;
+		if (vm < SS_NOISE_FLOOR) continue;   /* packed game data */
 		for (int i = 0; i < nt; i++) {
-			if (v < t[i].lo || v >= t[i].hi) continue;
+			if (vm < t[i].lo || vm >= t[i].hi) continue;
 			if (m < 0) {
 				m = i;
 				delta = t[i].delta;
@@ -931,8 +952,8 @@ static u64 ss_relocate_buffer(u8* buf, size_t size, ss_reloc_tgt_t* t, int nt, u
 			(*ambiguous)++;
 			continue;
 		}
-		v = (u64)((s64)v + delta);
-		memcpy(buf + off, &v, sizeof v);
+		vm = ((vm + delta) & SS_PTR_TAG_MASK) | t[m].tag;
+		memcpy(buf + off, &vm, sizeof vm);
 		t[m].hits++;
 		fixed++;
 	}
@@ -963,8 +984,10 @@ static void ss_relocate_snapshot(void) {
 	SSLOGI("relocate: fixed=%llu ambiguous=%llu targets=%d in %lldms",
 	       (unsigned long long)fixed, (unsigned long long)ambiguous, nt, ss_now_ms() - t0);
 	for (int i = 0; i < nt; i++)
-		SSLOGI("relocate: %s saved=%p..%p delta=%lld hits=%llu", t[i].name,
-		       (void*)t[i].lo, (void*)t[i].hi, (long long)t[i].delta,
+		SSLOGI("relocate: %s win=%llx..%llx delta=%llx tag=%02llx hits=%llu", t[i].name,
+		       (unsigned long long)t[i].lo, (unsigned long long)t[i].hi,
+		       (unsigned long long)t[i].delta,
+		       (unsigned long long)(t[i].tag >> 56),
 		       (unsigned long long)t[i].hits);
 }
 
@@ -1296,9 +1319,15 @@ static void ss_do_load(void) {
 
 	app_state_t* app_backup = (app_state_t*)malloc(sizeof(app_state_t));
 	ss_ctx_t* ss_backup = (ss_ctx_t*)malloc(sizeof(ss_ctx_t));
-	if (!app_backup || !ss_backup) {
+	/* See the keep-live scan below. */
+	size_t seg_slots = ss.seg_size / 8;
+	u64* code_keep_val = (u64*)malloc(seg_slots * sizeof(u64));
+	u8* code_keep_mask = (u8*)calloc(seg_slots, 1);
+	if (!app_backup || !ss_backup || !code_keep_val || !code_keep_mask) {
 		free(app_backup);
 		free(ss_backup);
+		free(code_keep_val);
+		free(code_keep_mask);
 		atomic_store(&ss.status, 3); /* failed */
 		SSLOGE("load failed: backup allocation");
 		return;
@@ -1306,10 +1335,46 @@ static void ss_do_load(void) {
 	memcpy(app_backup, &global_app_state, sizeof(app_state_t));
 	memcpy(ss_backup, &ss, sizeof(ss_ctx_t));
 
+	/* Code/rodata references (function pointers in ObjectsFonctions/cptr_tab,
+	 * the draw-dispatch, input-test and screen-init globals, the
+	 * key_descriptions string tables) are baked to the binary's own code
+	 * layout. The module delta of the relocation pass fixes ASLR, but it
+	 * cannot fix a code shift between builds: a slot written by the previous
+	 * build carries the OLD function offsets, and translating them landed
+	 * mid-function of unrelated code (seen as a crash in the object script
+	 * engine, returning into &global_app_state). The pools hold zero module
+	 * pointers — every obj_t reference is seg/pool/heap — so this scan covers
+	 * the whole surface. Each slot whose value is a code/rodata reference in
+	 * either the live segment or the snapshot keeps this process' value:
+	 * constant tables stay correct for this binary, and the runtime-assigned
+	 * ones (draw fns, TestKey*, anim_func, pINIT_*) keep this process'
+	 * input config and screen mode — neither is game state. */
+	{
+		u64 code_lo = (u64)ss.mod_lo, code_hi = (u64)ss.seg_base;
+		const u64* live_seg = (const u64*)ss_backup->seg_base;
+		const u64* snap_seg = (const u64*)ss_backup->seg_copy;
+		for (size_t i = 0; i < seg_slots; i++) {
+			u64 a = live_seg[i], b = snap_seg[i];
+			if ((a >= code_lo && a < code_hi) || (b >= code_lo && b < code_hi)) {
+				code_keep_mask[i] = 1;
+				code_keep_val[i] = a;
+			}
+		}
+	}
+
 	/* Whole-segment restore, then put the platform-owned bytes back. */
 	memcpy((void*)ss_backup->seg_base, ss_backup->seg_copy, ss_backup->seg_size);
 	memcpy(&global_app_state, app_backup, sizeof(app_state_t));
 	memcpy(&ss, ss_backup, sizeof(ss_ctx_t));
+	{
+		u64* out = (u64*)ss_backup->seg_base;
+		u64 kept = 0;
+		for (size_t i = 0; i < seg_slots; i++)
+			if (code_keep_mask[i]) { out[i] = code_keep_val[i]; kept++; }
+		SSLOGI("load: kept %llu code/rodata references live", (unsigned long long)kept);
+	}
+	free(code_keep_val);
+	free(code_keep_mask);
 	free(app_backup);
 	free(ss_backup);
 
@@ -1329,6 +1394,14 @@ static void ss_do_load(void) {
 
 	if (flocon_tab) memcpy(flocon_tab, ss.flocon_copy, ss.flocon_size);
 	if (rvb_special) memcpy(rvb_special, ss.rvb_copy, ss.rvb_size);
+
+	/* draw_palette (the palette the frame blit actually uses) lives in
+	 * global_app_state, which is platform-owned and excluded from the
+	 * restore, and gameplay only refreshes it through SetPalette() on
+	 * palette transitions — not per frame. Re-upload the snapshot's current
+	 * palette or the restored pixels are shown through whatever palette the
+	 * previous level left behind until the next level load. */
+	SetPalette(&current_rvb, 0, 256);
 
 	/* If the sound bank or the music stream was reloaded since the save, the
 	 * restored pointer is dangling: keep the live object and reload the bank
@@ -1359,70 +1432,11 @@ static void ss_do_load(void) {
 	SSLOGI("loaded: world=%d level=%d", (int)num_world, (int)num_level);
 }
 
-/* ---- armed resume (phase 2b) ----
- *
- * The engine only accepts a snapshot on a gameplay frame of the matching
- * world/level. Right after a process restart it is standing in the menus, so
- * Java arms the resume (once the user confirmed), and two one-line hooks in
- * display.c walk it in: on the world map, WORLD_CHOICE() returns immediately
- * (new_world = 1), and after DETER_WORLD_AND_LEVEL()/SELECT_LEVEL() have
- * derived their own pick, num_world_choice/num_level_choice are pinned to
- * the snapshot's world/level. The engine then reloads that level normally
- * (DEPART_WORLD -> LoadBnkWorld -> DEPART_LEVEL -> INIT_MOTEUR_LEVEL) and the
- * first gameplay frame applies the snapshot. If the steering is missed the
- * resume is not lost: the same match check runs every frame, so walking to
- * the level by hand also triggers it. */
-
-static void ss_try_armed_apply(void) {
-	if (!ss.armed || ss.arm_delivered) return;
-	if (!ss_in_gameplay()) return;
-	if (num_world != ss.arm_world || num_level != ss.arm_level) return;
-	/* One attempt only: retrying a failed load every frame would spam. */
-	ss.arm_delivered = 1;
-	SSLOGI("armed resume: applying slot %d at world=%d level=%d",
-	       ss.arm_slot, (int)num_world, (int)num_level);
-	if (ss_read_slot(ss.arm_slot))
-		ss_do_load();
-}
-
-void savestate_arm(int slot) {
-	int world = 0, level = 0, usable = 0;
-	long long created = 0;
-	if (savestate_slot_info(slot, &world, &level, &created, &usable) != 1 || !usable) {
-		SSLOGI("armed resume: slot %d unusable, not armed", slot);
-		ss.armed = 0;
-		ss.arm_delivered = 1;
-		return;
-	}
-	ss.arm_slot = slot;
-	ss.arm_world = world;
-	ss.arm_level = level;
-	ss.arm_delivered = 0;
-	ss.armed = 1;
-	SSLOGI("armed resume: slot %d -> world=%d level=%d", slot, world, level);
-}
-
-void savestate_worldmap_hook(void) {
-	if (!ss.armed || ss.arm_delivered) return;
-	/* WORLD_CHOICE() returning nonzero is exactly what SYNCHRO_LOOP() is
-	 * waiting for: leave the map on the very first frame. */
-	new_world = 1;
-}
-
-void savestate_pick_level_hook(void) {
-	if (!ss.armed || ss.arm_delivered) return;
-	num_world_choice = ss.arm_world;
-	num_level_choice = ss.arm_level;
-}
-
 /* ---- entry points ---- */
 
 void savestate_frame_hook(void) {
 	int op = atomic_exchange(&ss.request, SS_OP_NONE);
-	if (op == SS_OP_NONE) {
-		ss_try_armed_apply();
-		return;
-	}
+	if (op == SS_OP_NONE) return;
 	int slot = atomic_exchange(&ss.request_slot, -1);
 	SSLOGI("frame hook: op=%d slot=%d at frame boundary", op, slot);
 	if (op == SS_OP_SAVE_TO_SLOT) {
@@ -1442,12 +1456,6 @@ void savestate_frame_hook(void) {
 
 void savestate_request(int op, int slot) {
 	SSLOGI("request: %s slot=%d", op == SS_OP_SAVE_TO_SLOT ? "save" : "load", slot);
-	/* A manual action is the player taking control: drop a pending resume. */
-	if (ss.armed && !ss.arm_delivered) {
-		SSLOGI("armed resume cancelled by manual request");
-		ss.armed = 0;
-		ss.arm_delivered = 1;
-	}
 	atomic_store(&ss.request_slot, slot);
 	atomic_store(&ss.request, op);
 }

@@ -89,6 +89,9 @@
 | `adb shell pm clear <pkg>` | 之后首次启动要求重新授权文件夹，且**真机上的原生存档一起没了** | 不要用。重装只需 `adb install -r`，SAF 授权和 `files/rayverse_save/` 都保留；确实要清就先把 `files/` 用 `run-as … tar` 备份出来 |
 | 真机和模拟器同时在线 | 所有 adb 命令报 `more than one device/emulator` | 一律 `adb -s emulator-5554`（真机是 `RFCNC0MT5VV`），脚本里把 `-s` 写死，别用默认设备 |
 | 读 `/proc/self/maps` 分类地址 | 某个桶恒为 0，被当成"快照里没有这一类指针" | `name[72]` + 路径列解析错位把 `/data/app/~~…==/lib/arm64/libmain.so` 截断在文件名之前 → 模块区间从未登记。**计数为 0 先证明这一类被登记过**（本轮靠日志里的 `regions=13` vs 应有的 14 暴露） |
+| `adb shell run-as … cat` 拉槽文件 | 文件比设备上大 ~10K，二进制被 0x0A→CRLF 撑坏，格式解析全错 | 与截图同一个坑：用 `adb exec-out "run-as … cat …" > f.bin` |
+| 崩溃只有 logcat 头、回溯 1 帧 | 定位不了谁把返回地址砸了 | `adb shell dumpsys dropbox --print SYSTEM_TOMBSTONE` 取全文（含 **memory near sp**）：栈上 {fp, lr} 帧记录链 + `llvm-nm` 偏移反查即可手工还原调用链。pc == lr 是 `ret` 进坏地址的签名 |
+| 怀疑"旧版本二进制布局不同"但手头没有旧产物 | 无法对比 | 槽文件本身就是证据：函数指针值 − saved 模块基址（`rec[0].base - 0x111358`）= 旧 build 的代码偏移，直接和当前 `llvm-nm` 对比 |
 
 ## 9. 抓日志的标准做法
 
@@ -166,3 +169,39 @@ slot 0: region seg moved since capture (saved=… live=… delta=10043392)
 - 别把它当 bug 修：真机上"杀掉进程再读旧槽"目前必然走这里。能跨进程恢复是 2b（两遍重定位）的目标，
   探针数据见 `docs/savestate-phase2.md` §9。
 - 反过来，会话内（同一次启动）存/读是 delta=0 的分支，2a 已完整验证。
+
+## 13. 跨进程读档真机崩溃：地址门槛按模拟器形态写死（savestate）
+
+- **症状**：Magic8 Pro 上关卡中读即时存档直接崩（tombstone：`SEGV_ACCERR` 写
+  `0x6d8c5240e8`，栈 `SetPalette ← ss_do_load`）；同一份包在 pixel6 模拟器上跨进程
+  读档正常。槽文件本身没问题：校验通过、列表可见。
+- **排查**：日志缓冲已被冲掉，改拉槽文件本体分析（`adb exec-out "run-as
+  com.rayverse.rayman.debug cat files/rayverse_save/rayverse_ss_0.bin"`，注意
+  `shell cat` 走 CRLF 会把二进制撑大 10K，必须 exec-out）。槽里 `rec[0].base =
+  0x6d8c518a80`，而崩溃写地址 = 槽0 seg base + 0xB668，即旧进程
+  `&global_app_state.game.draw_palette` —— 指针被原样写回、重定位根本没跑。
+- **根因**：`ss_relocate_buffer()` 的 `SS_NOISE_FLOOR = 2^40`（"低于 2^40 是打包
+  数据"）和 `v >> 48`（"高 16 位非 0 是两个打包 u32"）两个门槛都是照模拟器的地址
+  形态（模块在 0x7xxx…、堆无标签）写的。真机上模块在 0x6d8c…（2^38.6），堆指针带
+  TBI 标签 0xb4…，两个门槛把**全部**真指针都滤掉了。修法见
+  `docs/savestate-phase2.md` §11.4：匹配改在低 56 位上做，标签按活区域基址回填。
+- **教训**：地址形态假设（"真指针长什么样"）是设备相关的，不能写死。判"是不是指针"
+  只能靠"落不落在已知区域窗口里"，窗口匹配前先剥标签。探针里同类注释/门槛同病，
+  一并改了。
+
+## 14. 跨版本读档闪退：代码布局偏移，ASLR 重定位救不了（savestate）
+
+- **症状**：§13 的重定位修复后，同版本新槽存/读完全正常，旧版本写的槽读取仍闪退。
+  tombstone 形态变了：`trying to execute non-executable memory`，pc == lr ==
+  `global_app_state` 的地址（数据段内），栈帧链是
+  `DO_MAIN_LOOP → DO_GROS_MOTEUR_NORMAL → DO_MOTEUR → DO_OBJECTS →
+  DO_PNG_COLL_STONEMAN → skipToLabel`——对象脚本解释器把返回地址砸了。
+- **根因**：快照数据段里 1654 个函数/字符串指针（`ObjectsFonctions`、`cptr_tab`、
+  绘制分发、`TEST_KEY_BUTTON*` 等）带的是**写档 build 的代码偏移**；unity build 里
+  改 `savestate.c` 会让其后所有函数平移（实测 +0x438）。模块 delta 只修 ASLR，
+  平移后旧函数地址落到别的函数中段 → 乱执行。"游戏核心代码没改就不该不兼容"对
+  **数据布局**成立（stamp 冻结），对**代码指针**不成立。
+- **修复**：`ss_do_load()` 恢复数据段时对 `[mod_lo, seg_base)` 值域的槽位 keep-live
+  （保留本进程活值）；池里零模块指针，覆盖完备。完整调研过程（tombstone 栈帧链
+  还原、旧档偏移对比、危险面盘点）见 `docs/savestate-phase2.md` §11.5。
+- **验收**：真机读旧版本槽（world 1 level 9）成功恢复、无闪退（2026-10-14）。

@@ -59,9 +59,6 @@ public class RayverseActivity extends SDLActivity {
         dataBridge.registerWithNative();
         RayLog.i(TAG, "Game data OK (" + result.found.size() + " files), SDL running");
 
-        /* Offer to resume a snapshot saved by an earlier run (savestate 2b) */
-        offerArmedResume();
-
         /* Attach gamepad overlay */
         if (mLayout != null) {
             overlay = new GamepadOverlay(this);
@@ -171,7 +168,6 @@ public class RayverseActivity extends SDLActivity {
      * save can be aimed at the right place without guessing.
      */
     private void showSlotDialog(boolean forSave) {
-        stopArmedPoll();
         String[] labels = new String[SS_SLOTS];
         for (int i = 0; i < SS_SLOTS; i++) labels[i] = slotLabel(i, forSave);
 
@@ -252,69 +248,6 @@ public class RayverseActivity extends SDLActivity {
         }, 250);
     }
 
-    /**
-     * Cross-process resume (savestate phase 2b): if a slot written by an
-     * earlier run is still usable, ask once whether to jump back in.
-     * Confirming arms the native side; the engine then walks itself to the
-     * snapshot's world/level on the next world map and restores it there.
-     * A manual save/load from the settings menu cancels the resume.
-     */
-    private void offerArmedResume() {
-        int best = -1;
-        long bestTime = 0;
-        String bestInfo = null;
-        for (int i = 0; i < SS_SLOTS; i++) {
-            String info = nativeGetSaveStateSlotInfo(i);
-            if (info == null || "empty".equals(info) || "broken".equals(info)) continue;
-            String[] p = info.split(",");
-            if (p.length < 4 || !"1".equals(p[3])) continue;
-            long t = 0;
-            try { t = Long.parseLong(p[2].trim()); } catch (NumberFormatException ignored) {}
-            if (best < 0 || t > bestTime) { best = i; bestTime = t; bestInfo = info; }
-        }
-        if (best < 0) return;
-
-        String[] p = bestInfo.split(",");
-        String where = "世界" + p[0] + "-关卡" + p[1];
-        final int slot = best;
-        new AlertDialog.Builder(this)
-            .setTitle("检测到即时存档")
-            .setMessage("槽位 " + (slot + 1) + " · " + where + " · " + formatSlotTime(p[2])
-                    + "\n启动后自动前往该关卡并恢复？")
-            .setPositiveButton("恢复", (dialog, which) -> {
-                RayLog.i(TAG, "armed resume confirmed: slot " + slot);
-                nativeArmSaveState(slot);
-                pollArmedStatus(0);
-            })
-            .setNegativeButton("不用", (dialog, which) ->
-                    RayLog.i(TAG, "armed resume declined"))
-            .show();
-    }
-
-    /**
-     * The armed restore lands minutes later (after the menus and the level
-     * reload), so poll until it happens instead of waiting inline. Any other
-     * action on ssHandler (the manual save/load poll) replaces this one.
-     */
-    private void pollArmedStatus(int attempt) {
-        ssHandler.postDelayed(() -> {
-            int s = nativeGetSaveStateStatus();
-            if (s == 0) {
-                if (attempt < 600) pollArmedStatus(attempt + 1); /* ~5 min */
-                return;
-            }
-            if (s == 4) {
-                toast("已恢复即时存档");
-            } else if (s != 1) {
-                toast("即时存档恢复失败（代码 " + s + "）");
-            }
-        }, 500);
-    }
-
-    private void stopArmedPoll() {
-        ssHandler.removeCallbacksAndMessages(null);
-    }
-
     private void toast(String msg) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
     }
@@ -371,7 +304,6 @@ public class RayverseActivity extends SDLActivity {
     private static native void nativeRequestLoadState(int slot);
     private static native int nativeGetSaveStateStatus();
     private static native String nativeGetSaveStateSlotInfo(int slot);
-    private static native void nativeArmSaveState(int slot);
     private static native String nativeGetDebugLogDump();
 
     /**

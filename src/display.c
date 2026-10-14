@@ -276,9 +276,6 @@ void DISPLAY_STAGE_NAMES(void) {
 
 //35028
 s16 WORLD_CHOICE(u32 a1) {
-#ifdef ANDROID
-    savestate_worldmap_hook(); // phase 2b armed resume: leave the map at once
-#endif
     PC_do_cheats_in_world_map();
     s32 next_clock_target = 0;
     if (need_timer) {
@@ -382,9 +379,6 @@ void DO_WORLD_MAP(void) {
     if (!get_casse_brique_active() && ALL_WORLD && !ModeDemo) {
         num_level_choice = SELECT_LEVEL(num_level_choice);
     }
-#ifdef ANDROID
-    savestate_pick_level_hook(); // phase 2b armed resume: pin the snapshot's level
-#endif
     if (!ModeDemo) {
         PlaySnd_old(69);
         WaitNSynchro(5);
