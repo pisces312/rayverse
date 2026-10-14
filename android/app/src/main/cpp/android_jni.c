@@ -250,6 +250,57 @@ Java_com_rayverse_rayman_RayverseActivity_nativeGetDebugLogDump(
     return s;
 }
 
+/* ---- Keep-live backup of this file's own statics ----
+ * ss_do_load() restores libmain.so's whole .data/.bss from a snapshot, which
+ * rolls these process-owned statics back to whatever the WRITING process had
+ * (a dangling ring pointer, stale fd numbers, a different data dir). Full
+ * analysis: docs/savestate-cross-process-crash.md. The caller saves the live
+ * bytes just before the segment memcpy and restores them right after — the
+ * same keep-live treatment global_app_state already gets.
+ *
+ * The blob is heap-only: a static backup struct would itself be rolled back.
+ * android_plat_state_restore() must NOT log: until g_log_ring is written back,
+ * any RAY_LOG would crash exactly like the bug being fixed. g_log_ring is
+ * restored first, atomically, to match the atomic load in log_ring_get().
+ *
+ * Maintenance rule: any NEW file-scope variable added to this file must be
+ * added to android_plat_state_t as well. */
+
+typedef struct {
+    ray_log_ring_t* log_ring;                       /* restored first */
+    fd_entry_t fd_table[MAX_FD_ENTRIES];
+    int fd_count;
+    char saf_uri[sizeof(g_saf_uri)];
+    char game_data_path[sizeof(g_game_data_path)];
+    int use_saf;
+    char save_dir[sizeof(g_save_dir)];
+} android_plat_state_t;
+
+void* android_plat_state_save(void) {
+    android_plat_state_t* s = (android_plat_state_t*)malloc(sizeof(*s));
+    if (!s) return NULL;
+    s->log_ring = g_log_ring;
+    memcpy(s->fd_table, g_fd_table, sizeof(g_fd_table));
+    s->fd_count = g_fd_count;
+    memcpy(s->saf_uri, g_saf_uri, sizeof(g_saf_uri));
+    memcpy(s->game_data_path, g_game_data_path, sizeof(g_game_data_path));
+    s->use_saf = g_use_saf;
+    memcpy(s->save_dir, g_save_dir, sizeof(g_save_dir));
+    return s;
+}
+
+void android_plat_state_restore(void* blob) {
+    android_plat_state_t* s = (android_plat_state_t*)blob;
+    if (!s) return;
+    __atomic_store_n(&g_log_ring, s->log_ring, __ATOMIC_RELEASE);
+    memcpy(g_fd_table, s->fd_table, sizeof(g_fd_table));
+    g_fd_count = s->fd_count;
+    memcpy(g_saf_uri, s->saf_uri, sizeof(g_saf_uri));
+    memcpy(g_game_data_path, s->game_data_path, sizeof(g_game_data_path));
+    g_use_saf = s->use_saf;
+    memcpy(g_save_dir, s->save_dir, sizeof(g_save_dir));
+}
+
 /* ---- Savestate (instant save/load) ----
  * The heavy lifting runs on the game thread inside advance_frame(); these
  * JNI calls only queue a request / read back the status code. The slot-info

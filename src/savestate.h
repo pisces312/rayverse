@@ -47,6 +47,15 @@ int savestate_slot_info(int slot, int* world, int* level, long long* created, in
  * set from Java through nativeSetSaveDir. Implemented in android_jni.c. */
 const char* android_get_save_dir(void);
 
+/* Keep-live backup of android_jni.c's process-owned statics (log ring
+ * pointer, SAF fd table, data/save dir strings). ss_do_load() calls save()
+ * just before the whole-segment memcpy and restore() right after it —
+ * the segment rollback would otherwise leave the old process' values in
+ * place (dangling ring pointer, stale fds). Implemented in android_jni.c;
+ * see docs/savestate-cross-process-crash.md. */
+void* android_plat_state_save(void);
+void android_plat_state_restore(void* blob);
+
 #endif /* ANDROID */
 
 #endif /* SAVESTATE_H */

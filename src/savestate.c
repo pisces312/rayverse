@@ -1314,18 +1314,27 @@ static void ss_do_load(void) {
 	u8* live_tchatch = ptrTchatch;
 	ogg_t live_ogg = ogg_cd_track;
 
+	SSLOGI("load step: audio state captured");
 	stop_all_snd();
+	SSLOGI("load step: stop_all_snd #1 done");
 	SDL_ClearQueuedAudio(global_app_state.sdl.sound_output.audio_device);
+	SSLOGI("load step: ClearQueuedAudio done");
 
 	app_state_t* app_backup = (app_state_t*)malloc(sizeof(app_state_t));
 	ss_ctx_t* ss_backup = (ss_ctx_t*)malloc(sizeof(ss_ctx_t));
+	/* android_jni.c's own statics (log ring pointer, fd table, dir strings):
+	 * the segment restore below would roll them back to the writing
+	 * process' values. Taken after the slot read (file IO is done) and
+	 * before the memcpy — nothing in between touches them. */
+	void* plat_backup = android_plat_state_save();
 	/* See the keep-live scan below. */
 	size_t seg_slots = ss.seg_size / 8;
 	u64* code_keep_val = (u64*)malloc(seg_slots * sizeof(u64));
 	u8* code_keep_mask = (u8*)calloc(seg_slots, 1);
-	if (!app_backup || !ss_backup || !code_keep_val || !code_keep_mask) {
+	if (!app_backup || !ss_backup || !plat_backup || !code_keep_val || !code_keep_mask) {
 		free(app_backup);
 		free(ss_backup);
+		free(plat_backup);
 		free(code_keep_val);
 		free(code_keep_mask);
 		atomic_store(&ss.status, 3); /* failed */
@@ -1334,6 +1343,8 @@ static void ss_do_load(void) {
 	}
 	memcpy(app_backup, &global_app_state, sizeof(app_state_t));
 	memcpy(ss_backup, &ss, sizeof(ss_ctx_t));
+	SSLOGI("load step: backups done (app=%zu ss=%zu seg_slots=%zu)",
+	       sizeof(app_state_t), sizeof(ss_ctx_t), seg_slots);
 
 	/* Code/rodata references (function pointers in ObjectsFonctions/cptr_tab,
 	 * the draw-dispatch, input-test and screen-init globals, the
@@ -1360,12 +1371,19 @@ static void ss_do_load(void) {
 				code_keep_val[i] = a;
 			}
 		}
+		SSLOGI("load step: keep-live scan done");
 	}
 
-	/* Whole-segment restore, then put the platform-owned bytes back. */
+	/* Whole-segment restore, then put the platform-owned bytes back. The
+	 * android_jni.c statics go back FIRST — before this function logs
+	 * anything — or the very next SSLOGI would hit the rolled-back
+	 * (cross-process: dangling) log-ring pointer. */
 	memcpy((void*)ss_backup->seg_base, ss_backup->seg_copy, ss_backup->seg_size);
+	android_plat_state_restore(plat_backup);
+	SSLOGI("load step: segment restored");
 	memcpy(&global_app_state, app_backup, sizeof(app_state_t));
 	memcpy(&ss, ss_backup, sizeof(ss_ctx_t));
+	SSLOGI("load step: platform state restored");
 	{
 		u64* out = (u64*)ss_backup->seg_base;
 		u64 kept = 0;
@@ -1377,6 +1395,7 @@ static void ss_do_load(void) {
 	free(code_keep_mask);
 	free(app_backup);
 	free(ss_backup);
+	free(plat_backup);
 
 	/* Restore the pool headers from the recorded pointers, not the live
 	 * globals: after the segment memcpy the tmp global may again be the
@@ -1394,6 +1413,7 @@ static void ss_do_load(void) {
 
 	if (flocon_tab) memcpy(flocon_tab, ss.flocon_copy, ss.flocon_size);
 	if (rvb_special) memcpy(rvb_special, ss.rvb_copy, ss.rvb_size);
+	SSLOGI("load step: pools/flocon/rvb restored");
 
 	/* draw_palette (the palette the frame blit actually uses) lives in
 	 * global_app_state, which is platform-owned and excluded from the
@@ -1402,17 +1422,26 @@ static void ss_do_load(void) {
 	 * palette or the restored pixels are shown through whatever palette the
 	 * previous level left behind until the next level load. */
 	SetPalette(&current_rvb, 0, 256);
+	SSLOGI("load step: SetPalette done");
 
 	/* If the sound bank or the music stream was reloaded since the save, the
 	 * restored pointer is dangling: keep the live object and reload the bank
 	 * that belongs to the restored world. */
+	SSLOGI("load step: audio fixup start live: bnkF=%p bnkW=%p tch=%p dec=%p file=%p | snap: bnkF=%p bnkW=%p tch=%p dec=%p file=%p",
+	       (void*)live_bnk_fixe, (void*)live_bnk_world, (void*)live_tchatch,
+	       (void*)live_ogg.decoder, (void*)live_ogg.file,
+	       (void*)ss.aud_bnk_fixe, (void*)ss.aud_bnk_world, (void*)ss.aud_ptr_tchatch,
+	       (void*)ss.aud_decoder, (void*)ss.aud_ogg_file);
 	if (live_bnk_fixe != ss.aud_bnk_fixe) bnkDataFixe = live_bnk_fixe;
 	if (live_tchatch != ss.aud_ptr_tchatch) ptrTchatch = live_tchatch;
 	if (live_bnk_world != ss.aud_bnk_world) {
 		bnkDataWorld = live_bnk_world;
+		SSLOGI("load step: LoadBnkWorld(%d) begin", (int)num_world_choice);
 		LoadBnkWorld(num_world_choice);
+		SSLOGI("load step: LoadBnkWorld end");
 	}
 	if (live_ogg.decoder != ss.aud_decoder || live_ogg.file != ss.aud_ogg_file) {
+		SSLOGI("load step: ogg fixup (live dec=%p file=%p)", (void*)live_ogg.decoder, (void*)live_ogg.file);
 		ogg_cd_track = live_ogg;
 		if (!ogg_cd_track.decoder) is_ogg_playing = false;
 	}
@@ -1422,6 +1451,7 @@ static void ss_do_load(void) {
 	 * resolves its sample through the live bank again. Also sync the second
 	 * pointer to the tchatch buffer, which the segment restore rewound. */
 	stop_all_snd();
+	SSLOGI("load step: stop_all_snd #2 done");
 	if (ptrTchatch && TchachPerduPtr == ss.aud_ptr_tchatch)
 		TchachPerduPtr = ptrTchatch;
 
