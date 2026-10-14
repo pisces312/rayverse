@@ -76,6 +76,12 @@ public class GamepadOverlay extends View {
 
     private boolean landscape = true;
 
+    /* Physical-gamepad mode: hide the 9 game buttons but keep the settings
+     * gear so the settings menu (savestates etc.) stays reachable.
+     * Edit mode temporarily forces the buttons back on for dragging. */
+    private boolean padHideRequested = false;
+    private boolean buttonsHidden = false;
+
     /* Custom layout state */
     private final float[] customCx = new float[BTN_COUNT];
     private final float[] customCy = new float[BTN_COUNT];
@@ -139,6 +145,23 @@ public class GamepadOverlay extends View {
         editListener = l;
     }
 
+    /** Hide/show only the game buttons; the settings gear stays visible. */
+    public void setButtonsHidden(boolean hidden) {
+        padHideRequested = hidden;
+        applyButtonsHidden();
+    }
+
+    private void applyButtonsHidden() {
+        boolean target = padHideRequested && !editMode;
+        if (buttonsHidden == target) return;
+        buttonsHidden = target;
+        if (buttonsHidden) {
+            forceReleaseAll();
+            pointerMap.clear();
+        }
+        invalidate();
+    }
+
     public boolean isEditMode() {
         return editMode;
     }
@@ -152,6 +175,7 @@ public class GamepadOverlay extends View {
         } else {
             saveCustomLayout();
         }
+        applyButtonsHidden();
         invalidate();
         if (editListener != null) editListener.onEditModeChanged(editMode);
     }
@@ -315,12 +339,14 @@ public class GamepadOverlay extends View {
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        for (int i = 0; i < BTN_COUNT; i++) {
-            Rect r = hitAreas[i];
-            if (r == null) continue;
-            boolean pressed = pressCount[i] > 0;
-            boolean dragging = (i == dragButtonId);
-            drawButton(canvas, r, LABELS[i], pressed, dragging);
+        if (!buttonsHidden) {
+            for (int i = 0; i < BTN_COUNT; i++) {
+                Rect r = hitAreas[i];
+                if (r == null) continue;
+                boolean pressed = pressCount[i] > 0;
+                boolean dragging = (i == dragButtonId);
+                drawButton(canvas, r, LABELS[i], pressed, dragging);
+            }
         }
         drawSettingsButton(canvas);
         if (editMode) drawEditHint(canvas);
@@ -524,6 +550,7 @@ public class GamepadOverlay extends View {
     }
 
     private int hitTest(float x, float y) {
+        if (buttonsHidden) return -1;
         for (int i = 0; i < BTN_COUNT; i++) {
             if (hitAreas[i] != null && hitAreas[i].contains((int) x, (int) y)) return i;
         }

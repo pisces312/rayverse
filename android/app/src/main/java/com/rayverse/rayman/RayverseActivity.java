@@ -10,7 +10,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
-import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -81,7 +80,8 @@ public class RayverseActivity extends SDLActivity {
     private void updateOverlayVisibility() {
         if (overlay == null || padMapper == null) return;
         boolean hide = padMapper.isAutoHideEnabled() && padMapper.isGamepadOnline();
-        overlay.setVisibility(hide ? View.GONE : View.VISIBLE);
+        /* Hide only the game buttons; the settings gear stays reachable. */
+        overlay.setButtonsHidden(hide);
     }
 
     @Override

@@ -72,7 +72,8 @@ SDL  src/video/android/SDL_androidkeyboard.c   Android_Keycodes[keycode]
 - 默认映射（Xbox 布局）：十字键/左摇杆=移动，A=跳跃+确认，X=拳击，Y/L1/R1=抓，B/START/SELECT=菜单/返回。
 - 映射持久化在 SharedPreferences `rayverse_controller_prefs`（JSON，见 `MappingStore.java`），
   改键立即生效，游戏回前台时按 `config_version` 热重载。
-- 手柄在线时默认自动隐藏虚拟手柄层（可在设置页关闭）。
+- 手柄在线时默认自动隐藏虚拟手柄的游戏按键（可在设置页关闭）；右上角齿轮设置按钮始终保留，
+  「编辑按钮位置」会临时恢复按键显示，退出编辑后恢复隐藏。
 - 关键文件：`MappingStore.java`（存储/默认映射）、`GamepadInputMapper.java`（事件拦截与注入，
   引用计数防卡键）、`ControllerSettingsActivity.java`（设置 UI）；挂载点在 `RayverseActivity`
   的 `dispatchKeyEvent` / `dispatchGenericMotionEvent`。
