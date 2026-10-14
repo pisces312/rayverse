@@ -21,6 +21,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Controller (bluetooth gamepad/keyboard) mapping settings -->
+        <activity
+            android:name="com.rayverse.rayman.ControllerSettingsActivity"
+            android:screenOrientation="landscape"
+            android:exported="false" />
+
         <!-- Game activity: SDL -->
         <activity
             android:name="com.rayverse.rayman.RayverseActivity"

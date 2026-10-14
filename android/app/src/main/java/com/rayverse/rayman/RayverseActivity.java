@@ -8,6 +8,9 @@ import android.content.pm.ActivityInfo;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -30,6 +33,7 @@ public class RayverseActivity extends SDLActivity {
     private static final int SS_SLOTS = 3;
 
     private GamepadOverlay overlay;
+    private GamepadInputMapper padMapper;
     private final Handler ssHandler = new Handler(Looper.getMainLooper());
 
     @Override
@@ -65,6 +69,45 @@ public class RayverseActivity extends SDLActivity {
                 FrameLayout.LayoutParams.MATCH_PARENT
             );
             mLayout.addView(overlay, params);
+        }
+
+        /* Bluetooth gamepad/keyboard mapping layer (docs/gamepad-bt-plan.md):
+         * translates physical input into virtual key events injected through the
+         * same SDLActivity.onNativeKeyDown/Up channel the overlay uses. */
+        padMapper = new GamepadInputMapper(this, online -> updateOverlayVisibility());
+        updateOverlayVisibility();
+    }
+
+    private void updateOverlayVisibility() {
+        if (overlay == null || padMapper == null) return;
+        boolean hide = padMapper.isAutoHideEnabled() && padMapper.isGamepadOnline();
+        overlay.setVisibility(hide ? View.GONE : View.VISIBLE);
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (padMapper != null && padMapper.handleKeyEvent(event)) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (padMapper != null && padMapper.handleMotionEvent(event)) return true;
+        return super.dispatchGenericMotionEvent(event);
+    }
+
+    @Override
+    protected void onPause() {
+        if (padMapper != null) padMapper.releaseAll();
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (padMapper != null) {
+            padMapper.reloadIfChanged();
+            updateOverlayVisibility();
         }
     }
 
@@ -281,6 +324,10 @@ public class RayverseActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
+        if (padMapper != null) {
+            padMapper.destroy();
+            padMapper = null;
+        }
         super.onDestroy();
         /* SDL only finishes this activity when SDL_main returns, so the process stays
          * cached with the engine's memory arenas already freed - the next launch would

@@ -62,6 +62,22 @@ SDL  src/video/android/SDL_androidkeyboard.c   Android_Keycodes[keycode]
 
 尚未提供虚拟键的动作：取消（Tab）、暂停（Ctrl+NumLock）、全屏（F11）。
 
+## 蓝牙手柄 / 物理键盘
+
+设计与实现见 `docs/gamepad-bt-plan.md`（移植自 mario-android-port 的 BT-INPUT 方案）。
+手柄事件在 Java 层翻译成与虚拟手柄同一套虚拟键，经 `SDLActivity.onNativeKeyDown/Up`
+注入，原生侧零改动。
+
+- 入口：初始界面（SetupActivity）主菜单「Controller settings」→ `ControllerSettingsActivity`。
+- 默认映射（Xbox 布局）：十字键/左摇杆=移动，A=跳跃+确认，X=拳击，Y/L1/R1=抓，B/START/SELECT=菜单/返回。
+- 映射持久化在 SharedPreferences `rayverse_controller_prefs`（JSON，见 `MappingStore.java`），
+  改键立即生效，游戏回前台时按 `config_version` 热重载。
+- 手柄在线时默认自动隐藏虚拟手柄层（可在设置页关闭）。
+- 关键文件：`MappingStore.java`（存储/默认映射）、`GamepadInputMapper.java`（事件拦截与注入，
+  引用计数防卡键）、`ControllerSettingsActivity.java`（设置 UI）；挂载点在 `RayverseActivity`
+  的 `dispatchKeyEvent` / `dispatchGenericMotionEvent`。
+- 已知限制：HOME/音量/电源等系统保留键无法捕获。
+
 ## 自定义布局
 
 - 点右上角齿轮进入编辑模式，拖动按钮调整位置，再点齿轮保存；坐标按屏幕宽高的比例存储（`SharedPreferences` 的 `btn_<i>_x/_y/_size`）。

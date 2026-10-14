@@ -68,6 +68,8 @@ public class SetupActivity extends Activity {
         refreshSaveStatus();
 
         addCenteredButton(root, "Play", v -> launchGame());
+        addCenteredButton(root, "Controller settings",
+                v -> startActivity(new Intent(this, ControllerSettingsActivity.class)));
         addCenteredButton(root, "Export saves", v -> openTree(REQUEST_EXPORT_TREE));
         addCenteredButton(root, "Import saves", v -> openTree(REQUEST_IMPORT_TREE));
         addCenteredButton(root, "Change data folder", v -> openDocumentTree());
