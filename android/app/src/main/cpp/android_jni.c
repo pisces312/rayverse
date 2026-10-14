@@ -252,22 +252,24 @@ Java_com_rayverse_rayman_RayverseActivity_nativeGetDebugLogDump(
 
 /* ---- Savestate (instant save/load) ----
  * The heavy lifting runs on the game thread inside advance_frame(); these
- * JNI calls only queue a request / read back the status code. */
+ * JNI calls only queue a request / read back the status code. The slot-info
+ * call is the exception: it reads a file header only, so it is safe to run
+ * directly on the UI thread. */
 
 JNIEXPORT void JNICALL
 Java_com_rayverse_rayman_RayverseActivity_nativeRequestSaveState(
-    JNIEnv* env, jclass cls)
+    JNIEnv* env, jclass cls, jint slot)
 {
     (void)env; (void)cls;
-    savestate_request(1);
+    savestate_request(1, (int)slot);
 }
 
 JNIEXPORT void JNICALL
 Java_com_rayverse_rayman_RayverseActivity_nativeRequestLoadState(
-    JNIEnv* env, jclass cls)
+    JNIEnv* env, jclass cls, jint slot)
 {
     (void)env; (void)cls;
-    savestate_request(2);
+    savestate_request(2, (int)slot);
 }
 
 JNIEXPORT jint JNICALL
@@ -276,6 +278,26 @@ Java_com_rayverse_rayman_RayverseActivity_nativeGetSaveStateStatus(
 {
     (void)env; (void)cls;
     return savestate_get_status();
+}
+
+/* "world,level,epoch,usable" when the slot holds a snapshot, "empty" when
+ * there is no such file, "broken" when it is not a readable snapshot. */
+JNIEXPORT jstring JNICALL
+Java_com_rayverse_rayman_RayverseActivity_nativeGetSaveStateSlotInfo(
+    JNIEnv* env, jclass cls, jint slot)
+{
+    (void)cls;
+    int world = 0, level = 0, usable = 0;
+    long long created = 0;
+    int r = savestate_slot_info((int)slot, &world, &level, &created, &usable);
+    char text[96];
+    if (r == 0)
+        snprintf(text, sizeof(text), "empty");
+    else if (r < 0)
+        snprintf(text, sizeof(text), "broken");
+    else
+        snprintf(text, sizeof(text), "%d,%d,%lld,%d", world, level, created, usable);
+    return (*env)->NewStringUTF(env, text);
 }
 
 /* ---- Main entry ---- */

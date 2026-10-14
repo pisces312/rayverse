@@ -85,6 +85,10 @@
 | Gradle 缓存 | 改 `Android.mk` 后不生效 | 删 `app/build` + `app/.cxx` + `.gradle` 重来 |
 | `adb shell input keyevent` 驱动游戏 | 按键日志显示 down/up 只差 1 ms，引擎按 60 Hz 轮询 `Touche_Enfoncee`，经常一整帧都采不到 | 用 `input keyevent --longpress <code>`（按住 ~500 ms），每步截图确认；YES/NO 弹窗里"红色"才是当前选中项，需先用左/右切换 |
 | 注入按键走到存档选择页就失效 | `CHOOSE A GAME` 页上 `key sc=40 down/up` 日志齐全，但画面不动；人手点 START 正常 | 已定位（2026-10-06）：① 该页 Enter 一次只推进一格名字输入（`SAISIE_NOM` 的 `positionx`），且此子页忽略左右方向键，看似"无反应"；新建档要连按 3 次 Enter 出确认勾再回选择页，第 4 次 Enter 才真正 START。② 快速 down/up（同毫秒）在低帧率下整帧采不到，必须 `--longpress`。另注意虚拟 OK 按钮与 START 弹窗区域重叠，点屏幕会先被 overlay 吃掉 |
+| `uiautomator dump` 看不到本应用的对话框 | dump 出来是 2807 字节、没有任何 `text=` 的空树，误判"对话框没弹出"，白点了好几轮 | 该 dump 对 **Java `AlertDialog` 本来就取不到文本**（SDL/GL 表面也取不到游戏内画面）。判断对话框在不在只看截图；坐标按 `emu_p2a_33_labels.png` 这类 1:1 截图量，别信 dump 的 bounds |
+| `adb shell pm clear <pkg>` | 之后首次启动要求重新授权文件夹，且**真机上的原生存档一起没了** | 不要用。重装只需 `adb install -r`，SAF 授权和 `files/rayverse_save/` 都保留；确实要清就先把 `files/` 用 `run-as … tar` 备份出来 |
+| 真机和模拟器同时在线 | 所有 adb 命令报 `more than one device/emulator` | 一律 `adb -s emulator-5554`（真机是 `RFCNC0MT5VV`），脚本里把 `-s` 写死，别用默认设备 |
+| 读 `/proc/self/maps` 分类地址 | 某个桶恒为 0，被当成"快照里没有这一类指针" | `name[72]` + 路径列解析错位把 `/data/app/~~…==/lib/arm64/libmain.so` 截断在文件名之前 → 模块区间从未登记。**计数为 0 先证明这一类被登记过**（本轮靠日志里的 `regions=13` vs 应有的 14 暴露） |
 
 ## 9. 抓日志的标准做法
 
@@ -128,3 +132,37 @@ adb logcat -v time Rayverse:V Rayverse-DBG:V Rayverse-GL:V Rayverse-IO:V \
 - **修复**：`src/savestate.c` 新增 `ss_pool_ptr()` 池指针净化器——`capacity==0 || capacity>64MB || len>capacity` 一律视为"不存在"；`ss_alloc_buffers`、存档记账、读档校验、回写四条路径统一走它，跳过时记 `pool N header implausible … treating as freed`。回写循环改用**存档时记录的（已净化）指针**，保证任何情况下都不写已释放内存。引擎 free 点一行没碰。
 - **验证**：S20 真机 1-5 关：`pool 4 header implausible (len=0 capacity=0) — treating as freed` → `saved: world=1 level=5 segment=395K` → `loaded: world=1 level=5`，无崩溃，试玩正常；模拟器同链路通过。Magic8 Pro 的 128TB 垃圾值走同一分支（>64MB 上限），待复测。
 - **通用教训**：savestate 这类"信任引擎裸指针"的代码必须做 sanity check——freed-but-not-nulled 的全局是时间炸弹，内容在设备/系统版本间不具移植性；防御要覆盖所有读该指针的路径（分配、记录、校验、回写），漏一条就是崩溃或静默堆破坏。
+
+## 11. 2a 落盘：状态码被 UI 抢先吃掉，槽文件从没写出来（savestate）
+
+- **症状**：模拟器上选槽存档，toast 报"已保存到槽位 1"（状态码 1），日志里 `captured:` 也在，
+  但 `files/rayverse_save/` 下没有文件，且**没有任何错误日志**。
+- **根因**：`ss_do_save()` 自己把 `status=1` 写进原子量，UI 线程 250 ms 的轮询用
+  `atomic_exchange` 读一次即清零；随后帧钩子里那句"如果 status==1 就写槽文件"读到的已经是 0，
+  写盘分支被静默跳过。成功状态被消费 + 条件判断复用同一个量 = 没有任何一条路径会报错。
+- **修复**：`ss_do_save()` 改为**返回**状态码而不写 `ss.status`；钩子拿到返回值后
+  `if (st == 1 && !ss_write_slot(slot)) st = 8;` 再一次性 `atomic_store`。
+  写盘失败从此有明确的 8，不再被"已保存"的 toast 掩盖。
+- **验证**：轮询序列 `0,0 → 1`，日志 `slot 0 written: world=1 level=1 payload=5861K in 26ms`，
+  文件 6,002,720 B 落盘。
+- **通用教训**：跨线程的一次性状态（read-once 原子量）不能被生产方自己当作"后续动作的开关"。
+  要么另设一个不被消费的标志，要么像这里把决定权收回同一处顺序执行。
+
+## 12. 跨进程读档被拒是**设计行为**，不是回归（ASLR 实测）
+
+同一份 debug 包、同一台模拟器，三个进程的可写段基址：
+`0x735629311508` / `0x735628988418` / `0x73562931c418` —— 相邻两次启动差 **10,043,392 B（9.6 MB）**，
+而布局指纹 `stamp` 恒为 `5aa80b63`（它只由符号间距离构成，ASLR 搬移整段时不变，这正是它的用途）。
+
+所以 2a 在读槽时逐区域比对 `rec[].base` 与 `ss_region_live()` 的当前基址，任一不同就
+`status=10` 并打一行：
+
+```
+slot 0: region seg moved since capture (saved=… live=… delta=10043392)
+        — cross-process restore needs phase 2b
+```
+
+- 这条路径**不崩、不写坏内存**，UI 提示"该存档来自另一次运行，暂不支持跨进程读取"。
+- 别把它当 bug 修：真机上"杀掉进程再读旧槽"目前必然走这里。能跨进程恢复是 2b（两遍重定位）的目标，
+  探针数据见 `docs/savestate-phase2.md` §9。
+- 反过来，会话内（同一次启动）存/读是 delta=0 的分支，2a 已完整验证。

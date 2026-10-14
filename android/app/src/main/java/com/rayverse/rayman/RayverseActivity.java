@@ -26,6 +26,8 @@ public class RayverseActivity extends SDLActivity {
     private static final String TAG = "Rayverse";
     private static final String PREFS = "rayverse_prefs";
     private static final String KEY_ORIENTATION = "orientation"; /* "landscape" | "portrait" */
+    /* Must match SS_MAX_SLOTS in src/savestate.c. */
+    private static final int SS_SLOTS = 3;
 
     private GamepadOverlay overlay;
     private final Handler ssHandler = new Handler(Looper.getMainLooper());
@@ -91,12 +93,10 @@ public class RayverseActivity extends SDLActivity {
                 }, (dialog, which) -> {
                     switch (which) {
                         case 0:
-                            nativeRequestSaveState();
-                            pollSaveStateStatus(0);
+                            showSlotDialog(true);
                             break;
                         case 1:
-                            nativeRequestLoadState();
-                            pollSaveStateStatus(0);
+                            showSlotDialog(false);
                             break;
                         case 2:
                             showDebugLogDialog();
@@ -121,33 +121,88 @@ public class RayverseActivity extends SDLActivity {
     }
 
     /**
+     * Ask which slot to use. The list shows what each slot already holds so a
+     * save can be aimed at the right place without guessing.
+     */
+    private void showSlotDialog(boolean forSave) {
+        String[] labels = new String[SS_SLOTS];
+        for (int i = 0; i < SS_SLOTS; i++) labels[i] = slotLabel(i, forSave);
+
+        new AlertDialog.Builder(this)
+            .setTitle(forSave ? "保存到槽位" : "读取槽位")
+            .setItems(labels, (dialog, which) -> {
+                if (forSave) nativeRequestSaveState(which);
+                else nativeRequestLoadState(which);
+                pollSaveStateStatus(0, which, forSave);
+            })
+            .setNegativeButton("取消", null)
+            .show();
+    }
+
+    /**
+     * "world,level,epoch,usable" comes back for a readable slot. A slot from
+     * another build is listed rather than hidden - saving overwrites it, while
+     * loading gets a clear "版本不符" instead of a silent failure.
+     */
+    private String slotLabel(int slot, boolean forSave) {
+        String info = nativeGetSaveStateSlotInfo(slot);
+        String num = "槽位 " + (slot + 1);
+        if (info == null || "empty".equals(info)) return num + " · 空";
+        if ("broken".equals(info)) return num + (forSave ? " · 旧文件（覆盖）" : " · 版本不符");
+        String[] p = info.split(",");
+        if (p.length < 4) return num + " · 不可用";
+        String where = "世界" + p[0] + "-关卡" + p[1];
+        if (!"1".equals(p[3])) {
+            return num + " · " + where + (forSave ? "（覆盖）" : " · 版本不符");
+        }
+        return num + " · " + where + " · " + formatSlotTime(p[2]);
+    }
+
+    private String formatSlotTime(String epochSec) {
+        try {
+            long secs = Long.parseLong(epochSec.trim());
+            if (secs <= 0) return "未知时间";
+            return new java.text.SimpleDateFormat("MM-dd HH:mm",
+                    java.util.Locale.getDefault()).format(new java.util.Date(secs * 1000L));
+        } catch (NumberFormatException e) {
+            return "未知时间";
+        }
+    }
+
+    /**
      * The native request is consumed on the game thread at the next frame
      * boundary, so poll for the status code instead of expecting it inline.
      * Frames can take a while during loading screens, hence the retries.
+     * Writing a slot means hashing and dumping ~5.7 MB, so the window is
+     * wider than the in-memory-only case.
      */
-    private void pollSaveStateStatus(int attempt) {
+    private void pollSaveStateStatus(int attempt, int slot, boolean forSave) {
         ssHandler.postDelayed(() -> {
             int s = nativeGetSaveStateStatus();
-            RayLog.i(TAG, "savestate poll: status=" + s + " (attempt " + attempt + ")");
+            RayLog.i(TAG, "savestate poll: status=" + s + " slot=" + slot
+                    + " forSave=" + forSave + " (attempt " + attempt + ")");
             if (s == 0) {
-                if (attempt < 15) {
-                    pollSaveStateStatus(attempt + 1);
+                if (attempt < 40) {
+                    pollSaveStateStatus(attempt + 1, slot, forSave);
                 } else {
                     toast("即时存档操作超时");
                 }
                 return;
             }
             switch (s) {
-                case 1: toast("已保存即时存档"); break;
+                case 1: toast("已保存到槽位 " + (slot + 1)); break;
                 case 2: toast("只能在关卡游玩中存档"); break;
-                case 3: toast("即时存档失败"); break;
-                case 4: toast("已读取即时存档"); break;
+                case 3: toast("即时存档失败（内存不足）"); break;
+                case 4: toast("已读取槽位 " + (slot + 1)); break;
                 case 5: toast("没有可用的即时存档"); break;
                 case 6: toast("只能在关卡游玩中读档"); break;
                 case 7: toast("存档与当前状态不兼容"); break;
+                case 8: toast("写入槽位失败"); break;
+                case 9: toast("槽位文件已损坏"); break;
+                case 10: toast("该存档来自另一次运行，暂不支持跨进程读取"); break;
                 default: break;
             }
-        }, 200);
+        }, 250);
     }
 
     private void toast(String msg) {
@@ -202,9 +257,10 @@ public class RayverseActivity extends SDLActivity {
             .show();
     }
 
-    private static native void nativeRequestSaveState();
-    private static native void nativeRequestLoadState();
+    private static native void nativeRequestSaveState(int slot);
+    private static native void nativeRequestLoadState(int slot);
     private static native int nativeGetSaveStateStatus();
+    private static native String nativeGetSaveStateSlotInfo(int slot);
     private static native String nativeGetDebugLogDump();
 
     /**
