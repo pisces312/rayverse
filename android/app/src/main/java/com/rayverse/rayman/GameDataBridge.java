@@ -220,6 +220,7 @@ public class GameDataBridge {
     public static boolean isSaveFileName(String name) {
         if (name == null) return false;
         String u = name.toUpperCase(Locale.ROOT);
+        if (u.startsWith("RAYVERSE_SS_") && u.endsWith(".BIN")) return true;
         return u.startsWith("RAYMAN") && (u.endsWith(".SAV") || u.endsWith(".CFG"));
     }
 
@@ -259,7 +260,7 @@ public class GameDataBridge {
         return n;
     }
 
-    /** Copy RAYMAN*.SAV/.CFG from the SAF folder at treeUri into the save dir (overwrite). Returns count imported. */
+    /** Copy save files (RAYMAN*.SAV/.CFG and rayverse_ss_*.bin) from the SAF folder at treeUri into the save dir (overwrite). Returns count imported. */
     public int importSavesFrom(Uri treeUri) {
         DocumentFile srcDir = DocumentFile.fromTreeUri(context, treeUri);
         if (srcDir == null) return -1;

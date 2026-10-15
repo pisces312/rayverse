@@ -1430,6 +1430,26 @@ static void ss_do_load(void) {
 	SetPalette(&current_rvb, 0, 256);
 	SSLOGI("load step: SetPalette done");
 
+	/* DrawBufferNormal / DrawBufferNormalIni / draw_buffer alias
+	 * game->draw_buffer.memory (display.c derives DrawBufferNormal from it at
+	 * FIRST_INIT, SWAP_BUFFERS() re-derives draw_buffer from DrawBufferNormal,
+	 * and update_display_map() re-derives both from DrawBufferNormalIni every
+	 * frame). All three are plain .bss globals sitting next to — not inside —
+	 * global_app_state, so the segment restore rewound them to the writing
+	 * process' heap address while the app_state backup (sizeof(app_state_t))
+	 * could not cover them; relocation cannot fix them either, because the
+	 * block is a bare calloc with no registered region window. Left alone,
+	 * advance_frame() finds draw_buffer != game->draw_buffer.memory and swaps
+	 * the live pointer out for the dangling one immediately before the blit.
+	 * Re-derive all three: DrawBufferNormalIni must be included or the next
+	 * update_display_map() (per frame) feeds the dangling value back. */
+	DrawBufferNormal = global_app_state.game.draw_buffer.memory;
+	DrawBufferNormalIni = DrawBufferNormal;
+	draw_buffer = DrawBufferNormal;
+	SSLOGI("load step: draw buffer re-derived draw=%p ini=%p source=%p",
+	       (void*)draw_buffer, (void*)DrawBufferNormalIni,
+	       (void*)global_app_state.game.draw_buffer.memory);
+
 	/* If the sound bank or the music stream was reloaded since the save, the
 	 * restored pointer is dangling: keep the live object and reload the bank
 	 * that belongs to the restored world. */

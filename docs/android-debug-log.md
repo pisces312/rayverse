@@ -264,3 +264,51 @@ slot 0: region seg moved since capture (saved=… live=… delta=10043392)
 
 - **完整调研与修复设计**（含风险评估、验证计划）见
   `docs/savestate-cross-process-crash.md`。
+
+## 16. 读档后画面 blit 闪退：app_backup 覆盖不到的"编外" swap-buffer 全局
+
+- **症状**：v1.0.4 release 真机，同版本存档 → 杀进程 → 重进 → 读档 → 立即闪退。
+  **三次复现 pc（`surface_blit_palettized_image+212`）与 fault addr
+  （`0xb40000752d0dc0e0`）完全相同**，确定性 bug。
+- **关键判据**：该 fault addr 在**两个不同进程**里一模一样；Scudo 的 64000 字节
+  大块走 secondary mmap、基址随机，不可能撞同一地址 ⇒ 该值**来自存档文件**。
+- **根因**：`ss_do_load()` 的整段 `.bss` 回滚把 `DrawBufferNormal` / `draw_buffer` /
+  `DrawBufferNormalIni` 三个**独立全局**（`data.c:2614/2618/2624`，都不在
+  `global_app_state` 内）还原成写档进程的堆地址；`app_backup` 只盖
+  `sizeof(app_state_t)`，够不到它们；重定位也没兜住，因为它们指向的是
+  `engine.c:16` 的裸 `calloc(64000)`，没有登记区域窗口。下一帧
+  `SWAP_BUFFERS()`（`frame.c:41`）把悬垂值传给 `draw_buffer`，
+  `advance_frame()`（`engine.c:70-77`）的 `draw_buffer != game.draw_buffer.memory`
+  必然成立 → blit 前换指针 → `render.c:61` 解引用即崩。
+- **第三个洞**：`DrawBufferNormalIni` 不能漏 —— `update_display_map()`
+  （`map.c:77`，由 `DO_GROS_MOTEUR_NORMAL(1)` **每帧**调用）会从它把悬垂值重新
+  灌回 `DrawBufferNormal` / `draw_buffer`。只修两个只能撑过一帧。
+- **修复**：`ss_do_load()` 在 `global_app_state` 恢复之后按活值重派生这三个全局
+  （源头就是 `global_app_state.game.draw_buffer.memory`，`display.c:610` 的
+  `FIRST_INIT` 本来就是这么赋的）。不动 `ss_ctx_t`，stamp 不变，旧槽仍可读。
+- **同类审计**：`DisplayBufferNormal`（NULL 后无赋值）/ `display_buffer`（唯一赋值
+  来自前者）/ `temp_mem_buf`（`FIRST_INIT` 重建）无需处理；
+  `EffetBufferNormal` 与 `main_mem_*` 已被区域表 + pool 机制覆盖。
+- **完整调研**（抓证链路、符号化方法、完备性审计表、风险评估、验证计划、环境坑）
+  见 `docs/2026-10-15_1522_savestate-swapbuffer-dangling-globals.md`。
+
+## 17. 修复后读档仍崩：Bande[] 数组里的派生指针（同类，未决）
+
+- **症状**：§16 修复合入后的构建（BuildId 已与本地 release 包逐位核对一致），
+  同日 15:40 用**同一旧槽**读档再次闪退（tombstone_21）。fault addr 与前三次
+  完全相同（`0xb40000752d0dc0e0`），但崩溃点挪到
+  `Display_Back_Screen → Copy_Plan0Diff_To_Buf` 的 memcpy **写端**。
+- **根因推导**：`Bande[300]`（`.bss`，`data.c:3328`）的 `draw_buffer_pos` 是
+  `Init_Bande`（`menu.c:8 → screen.c:102/105`）从 `DrawBufferNormal` 派生的
+  指针，整段回滚后悬垂；指向的裸 `calloc(64000)` 无重定位窗口，§16 的
+  "重派三个全局"够不到数组字段。读源（`PLAN0BIT` 派生）被重定位兜住所以
+  没崩，只有写端崩。§16 §3 的审计漏了结构体数组内的指针字段。
+- **定论**（槽文件解剖，见对应文档 §8）：旧槽是**跨构建槽**——写于 12:37
+  （早于 v1.0.4 构建），其 draw buffer 地址 `0xb40000752d0dc0e0` 与当前任何
+  构建的地址都不同，读档必悬垂；同构建新槽（2-1 同关、同流程）多次重启读档
+  正常，因为**同构建进程的 draw buffer 地址确定性复用**，裸 calloc 指针靠
+  地址巧合活着。旧槽内容自洽、布局一致，不是坏档。
+- **修复方案**：登记 `SS_RGN_DRAWBUF` 重定位区域（把地址巧合变成重定位
+  保证，跨构建槽也能读；代价是 stamp 变、现有槽作废，旧槽是回归样本）。
+  在修复前**跨版本/跨构建读档不承诺支持**。样本库 `savestates/INDEX.md`，
+  完整调研见 `docs/2026-10-15_1611_tombstone21-bande-drawbufferpos-dangling.md`。

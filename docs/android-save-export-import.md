@@ -13,6 +13,8 @@
   - `RAYMAN1.SAV` / `RAYMAN2.SAV` / `RAYMAN3.SAV`（三个存档槽）
   - `RAYMAN<n>_ALL_WORLD.SAV`（世界地图进度，`sav_set_ALL_WORLD`）
   - `RAYMAN.CFG`（配置）
+  - `rayverse_ss_<N>.bin`（即时存档槽，`src/savestate.c`；2026-10-15 起纳入
+    导出/导入范围，便于跨设备迁移与问题样本回收，见 `savestates/INDEX.md`）
 - 该目录**用户不可见**；release 包非 debuggable，无 root 也无法 `run-as` 取出。
 - manifest 里 `android:allowBackup="false"`，**没有系统自动备份**。
 - 目前**没有任何导出/导入入口**。
@@ -92,7 +94,8 @@
 
 ## 6. 边界与风险
 
-- 只搬运匹配 `RAYMAN*.SAV` / `RAYMAN*.CFG` 的文件，避免把无关文件带进存档目录。
+- 只搬运匹配 `RAYMAN*.SAV` / `RAYMAN*.CFG` / `rayverse_ss_*.bin` 的文件
+  （`GameDataBridge.isSaveFileName()`），避免把无关文件带进存档目录。
 - 必须包含 `*_ALL_WORLD.SAV`，否则世界地图进度会缺。
 - 导入是破坏性覆盖 → 需二次确认。
 - 无「关卡中途自动存档」：进度只在新游戏 / 世界地图存档点写盘，

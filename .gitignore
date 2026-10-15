@@ -13,6 +13,10 @@ Release/
 !android/app/src/release/
 game-data/
 .workbuddy/
+
+# Local crash logs and adb logcat captures
+android/crashlogs/
+logcat*.txt
 *.exe
 *.dll
 *.app/*
