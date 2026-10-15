@@ -5,11 +5,19 @@
 | 工具 | 版本 |
 |------|------|
 | Android SDK | API 36 |
-| NDK | 28.2.13676358 |
+| NDK | **29.0.14206865**（由 `android/app/build.gradle.kts` 的 `ndkVersion` 钉死，不要写进 `local.properties`） |
 | AGP | 9.2.0 |
-| Gradle | 9.4.1 (Wrapper) |
+| Gradle | 9.4.1（仓库只有 `gradle/wrapper/gradle-wrapper.properties`，**没有可执行的 wrapper**，用系统 `gradle`，不要调 `./gradlew`） |
 | JDK | AndroidStudio JBR |
 | SDL2 | 2.32.10（`3rd/SDL/`，源码编译） |
+
+NDK 版本只在 `android/app/build.gradle.kts` 一处声明，仓库里没有构建脚本（无 `.sh`/`.bat`/CI），
+改 NDK 就改那里，并同步本表。
+
+之所以钉在 29：`src/ray_log.h` 用 `-D__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__=1`
+（定义在 `app/src/main/cpp/Android.mk`）+ `__builtin_available` 守卫引用
+`__android_log_is_loggable()`（API 30 符号）。这套写法在 29 上实测通过；28 上不带宏的
+直引和手写 weak 声明都被 strict availability 判为硬错误。降到 28 需重新验证，别直接改数字。
 
 ## 构建步骤
 

@@ -22,6 +22,7 @@ if (missingSigningEnv.isNotEmpty() &&
 android {
     namespace = "com.rayverse.rayman"
     compileSdk = 36
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "com.rayverse.rayman"
