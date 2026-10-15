@@ -195,6 +195,75 @@ debug 包（-O0）复现不了 → 优化相关 UB 或地址落点运气问题�
   抓堆栈路径受阻，改用 release 包加更细的定位日志（在 `main_Ray` 状态机关键分支打点，
   看跨进程 load 后卡在哪个分支、哪个全局量不推进）。
 
+### 关键发现：`isDebuggable` 本身就会改变复现（2026-10-14 23:18）
+
+- 为拿到"能复现 + 能抓栈"的组合，给 release 临时加 `isDebuggable = true`
+  （-O2 不变，仅开 `DEBUGGABLE` 标志），装 S20 复现。结果：**无法重现**。
+- 至此形成完整三联对照：
+
+  | 变体 | 优化 | debuggable | 结果 |
+  |------|------|-----------|------|
+  | release | -O2 | 否 | **稳定冻结**（唯一复现） |
+  | release + backtrace 采样 | -O2 | 否 | 不复现（23:31） |
+  | release + debuggable | -O2 | 是 | 不复现 |
+  | debug | -O0 | 是 | 不复现 |
+
+- 结论：**复现与否不是由优化级别单独决定，而是对进程级环境整体敏感**。
+  `isDebuggable=true` 会让 bionic 换用 scudo 的 debug 配置（不同堆布局/填充模式）、
+  开启 native heap pointer tagging、ART 走 JIT 而非 AOT——任何一项都会挪动堆地址，
+  从而让悬垂指针落点漂走。这彻底坐实根因是**布局敏感的悬垂指针**，也说明
+  "靠 debuggable 抓 native 栈"这条路走不通：**复现（非 debuggable）与可 ptrace
+  抓栈（debuggable）本质互斥**。
+
+### 方案 A（进程内 backtrace）实测：同样不复现 → 海森堡 bug（2026-10-14 23:31）
+
+- 实施：撤 `isDebuggable`；android_jni.c 加 `android_diag_backtrace()`
+  （`_Unwind_Backtrace` + `dladdr`，不分配内存）；savestate.c 加
+  `static int diag_sample_frames`（`ss_do_load` 成功后 arm 900 帧，帧钩子每 120 帧
+  dump 一次）。非 debuggable、-O2 不变，仅新增少量代码。
+  坑：`backtrace()`(execinfo.h) 是 API 33+ 才进 bionic 的 libc，minSdk21 链接报
+  `undefined symbol: backtrace`，改用 `<unwind.h>` 的 `_Unwind_Backtrace`（libgcc 全版本）。
+- 结果：**不复现**。四联对照（见上表）显示唯一复现的仍是"原始 release"，而
+  debug / debuggable / 加采样代码三个变体全都不复现。
+- 结论：这是典型**海森堡 bug**——任何"为观测而加代码 / 改环境"的行为都会改变
+  `.so`/`.bss`/堆布局，让悬垂指针落点漂走。**运行时观测这条路整体走不通**（观测
+  本身消除现象）。此前"带步进日志的 release 仍复现"是巧合（步进日志恰好没挪动关键
+  布局），不可依赖。
+- 方向修正：转向**与布局无关的静态/快照分析**——用指针分类探针分析快照内容，找出
+  region 之外的指针并定位是哪个全局变量（phase2.md §272-4 的待办），而不是继续在
+  运行时加观测代码。待探针现状梳理后落地。
+
+### 探针快照分析：否定"native 堆悬垂指针"假设（2026-10-14 23:46）
+
+- 部署：换回原始 release（能复现的那个），`setprop log.tag.Rayverse-SS VERBOSE`
+  （只改日志过滤，不改布局），用户在第二槽位覆盖保存。探针在**保存时**分析快照，
+  与 load 布局无关，不受海森堡效应影响。
+- **关键更正**：seg 基准 = `.data` 段 PT_LOAD 的 vaddr = `0xfcc80`（此前笔记误记
+  `0xfc9e0`）。`readelf -l`：三个 PT_LOAD，最大的 PF_W 段 vaddr `0xfcc80`、
+  memsz `0x62990`（`.data` `0xfcc80`+`.bss` `0x107b70`）。off → 文件 vaddr =
+  `0xfcc80 + off`。
+- **否定性结论（重要）**：257 个 `heap_other` 采样（SS_SAMPLE_MAX=64 已调大）的
+  `where` 全部落在 **dalvik 堆 / framework（vdex/art）**，**没有任何一个指向 native
+  堆 scudo**：
+
+  ```
+  189 dalvik-main space   52 dalvik-free list   7 dalvik-zygote
+  5 boot-framework.art    2 boot-bouncycastle.vdex  1 boot-okhttp.vdex
+  1 [anon:.bss]           （合计 257）
+  ```
+
+  即：**快照里没有指向"游戏自己 malloc 的独立 native 堆块"的指针**。"relocate 遗漏了
+  指向 native 堆的指针"这一假设被证伪。data-seg 的 32 个 `heap_other` 里，前 30 个
+  `off` 落在 `block_types_img_data`（`0xfcc8c` 图像数组）内、值是 `0x25/0x26/0x27/0x66`
+  填充字节；样本 31（`off=0x3d1e8`→`0x109e68`，落在 `debug_overlay_draw_buffer`
+  大数组内）的值 `0x6e8b5f4610` 精确等于 module hi（= seg hi），是调试缓冲区的残留值。
+- **剩余嫌疑收窄到 `mapped_other`**：relocate/keep-live 明确不覆盖"指向其他库
+  （libSDL2/libc/libGLES/其他 .so）的指针"（`mapped_other` 类）。计数 data-seg=2、
+  pool0=49、pool1=48、pool2=15、pool3=83（合计 ~197），但原探针**只计数不采样**，
+  看不到具体是哪些值/哪些全局。**下一步：扩展探针采样 `mapped_other`**（只改
+  `ss_probe_t` 栈局部结构 + 采样打印，不改 `.bss/.data` 布局，不触发海森堡），
+  拿到这 ~197 个指针的值，nm 反查是哪个全局变量指向了别的库。
+
 ## 9. 提交记录
 
 - 本轮修复（keep-live）+ 步进日志已提交推送；跨进程画面冻结仍未定位（见 §8），

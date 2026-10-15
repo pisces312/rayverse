@@ -537,7 +537,7 @@ typedef struct {
 } ss_map_t;
 
 #define SS_MAP_MAX 1024
-#define SS_SAMPLE_MAX 6
+#define SS_SAMPLE_MAX 64
 /* bionic's allocator hands out TBI-tagged pointers (top byte 0xb4.. on the
  * Magic8 Pro) and ASLR can place libmain anywhere in the low VA range
  * (0x006d_8c51_8a80 for the data segment on one observed run), so neither
@@ -574,7 +574,8 @@ typedef struct {
 	u64 noise_low;    /* of the two above: below SS_NOISE_FLOOR, i.e. packed data */
 	ss_sample_t s_heap_other[SS_SAMPLE_MAX];
 	ss_sample_t s_unmapped[SS_SAMPLE_MAX];
-	int n_heap_other, n_unmapped;
+	ss_sample_t s_mapped_other[SS_SAMPLE_MAX];
+	int n_heap_other, n_unmapped, n_mapped_other;
 } ss_probe_t;
 
 static int ss_load_maps(ss_map_t* maps, int max) {
@@ -706,6 +707,7 @@ static void ss_probe_buffer(ss_probe_t* pr, const ss_probe_rng_t* set,
 				ss_probe_sample(pr->s_heap_other, &pr->n_heap_other, off, v, name);
 			} else {
 				pr->mapped_other++;
+				ss_probe_sample(pr->s_mapped_other, &pr->n_mapped_other, off, v, name);
 			}
 			continue;
 		}
@@ -758,6 +760,10 @@ static void ss_probe_report(const char* label, const ss_probe_t* pr, const ss_pr
 	for (int i = 0; i < pr->n_unmapped; i++)
 		SSLOGD("probe %s: unmapped sample %d: +0x%zx -> 0x%lx", label, i,
 		       pr->s_unmapped[i].off, (unsigned long)pr->s_unmapped[i].value);
+	for (int i = 0; i < pr->n_mapped_other; i++)
+		SSLOGD("probe %s: mapped_other sample %d: +0x%zx -> 0x%lx in %s", label, i,
+		       pr->s_mapped_other[i].off, (unsigned long)pr->s_mapped_other[i].value,
+		       pr->s_mapped_other[i].where);
 }
 
 static void ss_run_probe(const char* why) {
