@@ -21,10 +21,17 @@ description: Fast end-to-end verification of the Rayverse Android port (Rayman 1
 ### 1. Build & install
 
 ```bash
-cd android && gradle assembleDebug
+cd android && gradle :app:assembleDebug
 # apk: android/app/build/outputs/apk/debug/app-debug.apk
 find app/build -name "*.so" -newer src/common.h   # proves native sources were rebuilt
 adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+There is **no Gradle wrapper** in this repo — call the system `gradle` (9.4.1), never `./gradlew`. The NDK is pinned by `ndkVersion` in `android/app/build.gradle.kts` (29.0.14206865 as of 2026-10-15; change it there, not in `local.properties`). Useful static checks on the produced `libmain.so` (`<...>/obj/local/arm64-v8a/libmain.so`), with `$NDK = D:/dev/android_sdk/ndk/<ver>/toolchains/llvm/prebuilt/windows-x86_64/bin`:
+
+```bash
+"$NDK/llvm-nm.exe" libmain.so | grep is_loggable     # w = weak import, no local copy
+"$NDK/llvm-readelf.exe" -S libmain.so | grep -E "\.got|\.data|\.bss"
 ```
 
 A 3–5 s `BUILD SUCCESSFUL` is usually a real incremental build — trust the mtime check, not the clock.
@@ -56,9 +63,29 @@ Properties are cached per process — the restart is mandatory, not optional.
 
 **Always use `input keyevent --longpress <code>`** — plain `keyevent` sends down+up within 1 ms and the engine polls `Touche_Enfoncee` per frame, so presses silently drop at translated-emulator FPS. Codes: Enter=66, Space=62, DPAD_UP=19/DOWN=20/LEFT=21/RIGHT=22, BACK=4. Screenshot after every step.
 
+To hold one of the **on-screen gamepad buttons** (d-pad / OK, bottom-left and bottom-right of the landscape frame) use a zero-distance swipe instead — `keyevent --longpress` only affects hardware keys:
+
+```bash
+adb -s emulator-5554 shell input swipe 1900 943 1900 943 2500   # hold OK for 2.5 s
+```
+
 `uiautomator dump` is **useless for this app's Java AlertDialogs too**, not just the GL surface: it returns a ~2.8 KB tree with no `text=`/usable bounds. Decide "dialog open / which row" from the screenshot only (`exec-out screencap` is 1:1 with device pixels on this AVD, so measure coordinates off it).
 
-Known-good taps on this AVD (device coords, 2400x1080 landscape): setup-screen **Play** ≈ (1200,309); in-game **gear** ≈ **(2315,130)** (the old (2198,118) misses — recompute from `layoutSettingsButton`: 12·density margin, icon = min(w,h)·0.10). Gear-dialog rows: **即时存档** (1200,346), **即时读档** (1200,515), **查看调试日志** (1200,684), 关闭/取消 (1200,828). The Phase 2a **slot dialog** reuses the same band: rows 槽位1/2/3 ≈ (1200,352) / (1200,517) / (1200,681), 取消 (1200,830); row band ≈140 px, so ±60 px in y is still the same row. The in-game OK button overlaps the START slot — verify with a screenshot before trusting a tap. S20 real device (1080x2400 override @480dpi, landscape coord space 2400x1080): Play ≈ (1162,257), gear ≈ (2174,155), dialog rows 即时存档 ≈ (1150,348), 即时读档 ≈ (1150,515), 关闭 ≈ (1165,838).
+### Coordinate tables — measure, don't trust
+
+The gear dialog is a **narrow portrait-shaped panel** (not full width), so its rows sit well left of screen centre. Two coordinate sets are in circulation; both were measured off screenshots, and **the newer one is what the current build renders**:
+
+| Target | 2026-10-15 measured (debug APK, use this) | older note (may miss) |
+|---|---|---|
+| setup-screen **Play** | (1200,252) | (1200,309) |
+| in-game **gear** | (2195,142) | (2315,130) computed from `layoutSettingsButton` |
+| **即时存档** | (656,351) | (1200,346) |
+| **即时读档** | (656,517) | (1200,515) |
+| 槽位1 / 2 / 3 | (651,412) / (651,585) / ~(651,758) | (1200,352/517/681) |
+
+Row band ≈170 px, so ±60 px in y is still the same row; x matters much more than y. If a tap does nothing, take a screenshot and read the coordinate off it — the panel has moved at least once already. The in-game OK button overlaps the START slot — verify with a screenshot before trusting a tap. S20 real device (1080x2400 override @480dpi, landscape coord space 2400x1080): Play ≈ (1162,257), gear ≈ (2174,155), dialog rows 即时存档 ≈ (1150,348), 即时读档 ≈ (1150,515), 关闭 ≈ (1165,838) — on the phone the release build adds a 切换到竖屏 row, which shifts everything below it.
+
+**Slot numbering**: the dialog's "槽位1/2/3" are 1-based in the UI but the logs are 0-based — tapping 槽位2 logs `slot=1`. Reading back the row you *think* you saved to is the single most common way to fake yourself out (an untouched slot just answers `region 0 size X != local Y`).
 
 ### Getting to gameplay
 
@@ -66,8 +93,8 @@ Known-good taps on this AVD (device coords, 2400x1080 landscape): setup-screen *
 
 1. `--longpress 66` on the title → "CHOOSE A GAME" slot screen.
 2. `--longpress 66` on an empty slot → name-entry sub-screen: **each Enter advances one character position** (posx 1→2→3→checkmark); arrows are ignored there. Send 4 spaced Enters.
-3. Enter on the slot screen defaults to START → `LoadGameOnDisk` → vignette, one more Enter skips it → **world map, NOT gameplay**. Rayman spawns on the save point — stepping onto it shows "GAME SAVED" (that is the engine's own RAYMANn.SAV write, unrelated to 即时存档).
-4. The world map is a **node graph**, not a walk: from the save node, one Enter/OK on the highlighted node enters `RAY1.LEV` directly (`t_world_info[].index_*` + `RESPOND_TO_*`), so the adb path is Enter → `RAY1.LEV` in the log → intro animation → Enter skips it → gameplay. (Walking the map by taps is what the old "wind up/right" note was about; don't bother, and let the user drive if a specific position is needed.) During the world map and the intro animation the savestate gate reports `map=0 menu=1` and rejects saves (status 2) — expected, not a bug.
+3. Enter on the slot screen defaults to START → `LoadGameOnDisk` → vignette, one more Enter skips it → **world map, NOT gameplay**. Rayman spawns on the save point — stepping onto it shows "GAME SAVED" (that is the engine's own RAYMANn.SAV write, unrelated to 即时存档). If a slot already has a save, one Enter on it goes straight through; only an *empty* slot opens the name-entry sub-screen (4 spaced Enters).
+4. The world map is a **node graph**, not a walk: from the save node, one Enter/OK on the highlighted node enters `RAY1.LEV` directly (`t_world_info[].index_*` + `RESPOND_TO_*`), so the adb path is Enter → `RAY1.LEV` in the log → intro animation → Enter skips it → gameplay. **When plain `keyevent 66` refuses to enter the level, hold the on-screen OK button instead**: `input swipe 1900 943 1900 943 2500` (and repeat once — the first press can be eaten by the vignette). DPAD keyevents barely move Rayman on the map (he is bounded to his node ring) — don't try to walk anywhere. During the world map and the intro animation the savestate gate reports `map=0 menu=1` and rejects saves (`save rejected: not in gameplay`) — expected, not a bug.
 
 Level-1 caveat: spawn sits next to water — walking RIGHT kills Rayman quickly. Useful as a deliberate state disturbance.
 
@@ -100,6 +127,21 @@ Pass criteria:
 Status codes (Java toasts / `nativeGetSaveStateStatus`): 1 saved-to-slot, 2 save rejected (not in gameplay), 3 alloc failed, 4 loaded-from-slot, 5 no snapshot, 6 load rejected, 7 world/level mismatch, 8 slot write failed, 9 file unusable (magic/format/stamp/checksum), 10 layout moved — i.e. the slot was written by **another process**, which phase 2a refuses by design (`docs/android-debug-log.md` §12). The gate is `RaymanDansUneMapDuJeu && !During_The_Menu && !GoMenu && !gele` — codes 2/6 in menus are expected behavior, not failures. Java polls status every 250 ms up to 40 times, so logs land within ~3 s. Every code (including rejections) has a breadcrumb; the chain `request: save → frame hook: op=1 → captured → written/rejected` pinpoints where a failure stopped.
 
 Without adb (real device): gear → **查看调试日志** opens the full ring-buffer dump (Java + native, release included) and copies it to the clipboard; the dialog auto-scrolls to the tail. Its header line (version, debug flag, model) also proves which build is installed.
+
+### 5b. Cross-process (phase 2b) savestate check
+
+The bug that mattered most lived here, so this is the loop to run after **any** native change:
+
+1. Gameplay → gear → 即时存档 → pick a slot → confirm `slot N written: world=W level=L payload=…`.
+2. `adb -s emulator-5554 shell am force-stop com.rayverse.rayman.debug` (a real process kill, not a home press).
+3. Relaunch → Play → back into the **same level** (savestate load is gated to gameplay).
+4. gear → 即时读档 → **the same slot** (mind the 0-based numbering above).
+
+Pass criteria: `loaded: world=W level=L`, `adb logcat -d -b crash` empty, the process still listed in `ps -A`, and the frame still advances after a key press (a frozen picture that still answers input is *also* a failure — that is how the dangling-pointer bug presented on real devices).
+
+Layout changes: any native edit that moves `.data`/`.bss` makes previously written slots unusable, and the load then fails with `region 0 size <saved> != local <current>`. That is the guard working, not a regression — **re-save first** before concluding anything. Diff the two sizes to confirm the delta matches what you changed (e.g. −32 B after deleting a cached pointer global).
+
+Tombstones: this AVD is `google_apis` and `adb root` succeeds (uid 0), so `/data/tombstones/` is readable **even for a non-debuggable release build**. That is the only way to get a native stack for a release-only crash; on a real phone, reproducing and being ptrace-able are mutually exclusive (`isDebuggable = true` changes the heap layout and the bug vanishes).
 
 ### 6. Cleanup / hand-off
 
