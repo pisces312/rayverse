@@ -12,20 +12,25 @@
 #endif
 
 // __android_log_is_loggable() only exists from API 30 while this APK runs down
-// to API 21, so it is looked up at runtime; calling it directly would make
-// libmain.so unloadable on older devices.
+// to API 21, so it is looked up at runtime. The dlsym cache MUST be this one
+// shared global (defined in android_jni.c), not a `static` inside this inline
+// function: a per-TU static lives in the snapshotted data segment, and
+// savestate's whole-segment rollback turns every copy into the writing
+// process' liblog address — after a cross-process slot load the next RAY_LOG
+// called a dangling pointer (SIGSEGV via PROT_NONE on the emulator, freezes
+// on real devices). android_plat_state_save/restore() keeps this global live
+// across the restore.
+extern int (*ray_log_is_loggable_fn)(int, const char*, int);
+
 static inline int ray_log_enabled(int level, const char* tag) {
-    typedef int (*is_loggable_fn)(int, const char*, int);
-    static is_loggable_fn is_loggable;
-    static int looked_up;
-    if (!looked_up) {
-        looked_up = 1;
-        is_loggable = (is_loggable_fn)dlsym(RTLD_DEFAULT, "__android_log_is_loggable");
+    if (!ray_log_is_loggable_fn) {
+        ray_log_is_loggable_fn =
+            (int (*)(int, const char*, int))dlsym(RTLD_DEFAULT, "__android_log_is_loggable");
     }
-    if (!is_loggable) {
+    if (!ray_log_is_loggable_fn) {
         return level >= RAY_LOG_DEFAULT;
     }
-    return is_loggable(level, tag, RAY_LOG_DEFAULT) > 0;
+    return ray_log_is_loggable_fn(level, tag, RAY_LOG_DEFAULT) > 0;
 }
 
 /* In-app debug-log ring, implemented in android_jni.c. Every RAY_LOG line is

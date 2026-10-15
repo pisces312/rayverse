@@ -274,7 +274,14 @@ typedef struct {
     char game_data_path[sizeof(g_game_data_path)];
     int use_saf;
     char save_dir[sizeof(g_save_dir)];
+    int (*is_loggable)(int, const char*, int);      /* ray_log's dlsym cache */
 } android_plat_state_t;
+
+/* The one shared dlsym cache for ray_log_enabled() (declared in ray_log.h).
+ * It must live here — outside the snapshotted data segment's per-TU statics —
+ * because it stores a liblog function pointer that goes stale across a
+ * cross-process slot restore. Kept live via android_plat_state_save/restore. */
+int (*ray_log_is_loggable_fn)(int, const char*, int);
 
 void* android_plat_state_save(void) {
     android_plat_state_t* s = (android_plat_state_t*)malloc(sizeof(*s));
@@ -286,6 +293,7 @@ void* android_plat_state_save(void) {
     memcpy(s->game_data_path, g_game_data_path, sizeof(g_game_data_path));
     s->use_saf = g_use_saf;
     memcpy(s->save_dir, g_save_dir, sizeof(g_save_dir));
+    s->is_loggable = ray_log_is_loggable_fn;
     return s;
 }
 
@@ -299,6 +307,7 @@ void android_plat_state_restore(void* blob) {
     memcpy(g_game_data_path, s->game_data_path, sizeof(g_game_data_path));
     g_use_saf = s->use_saf;
     memcpy(g_save_dir, s->save_dir, sizeof(g_save_dir));
+    ray_log_is_loggable_fn = s->is_loggable;
 }
 
 /* ---- Savestate (instant save/load) ----
