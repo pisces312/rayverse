@@ -1,9 +1,10 @@
 # 存档导出/导入与跨设备共享 — 方案 A
 
-> 状态：**已实现（E1 首页菜单）**，待真机验证。debug/release 共存（`applicationIdSuffix=".debug"`）
-> 与 debug 专属图标已单独实现，见文末「关联改动」。
+> 状态：**已实现（E1 首页菜单）**。导出已在真机用于回收即时存档样本；导入由同一文件过滤器处理。
+> 当前范围包含 `RAYMAN*.SAV` / `RAYMAN*.CFG` / `rayverse_ss_*.bin`。debug/release 共存
+> （`applicationIdSuffix=".debug"`）与 debug 专属图标也已实现，见文末「关联改动」。
 
-## 1. 现状（事实）
+## 1. 存储布局（当前事实）
 
 - 存档写在 App 私有内部存储：`context.getFilesDir()/rayverse_save/`
   （设备上即 `/data/data/com.rayverse.rayman/files/rayverse_save/`）。
@@ -17,9 +18,10 @@
     导出/导入范围，便于跨设备迁移与问题样本回收，见 `savestates/INDEX.md`）
 - 该目录**用户不可见**；release 包非 debuggable，无 root 也无法 `run-as` 取出。
 - manifest 里 `android:allowBackup="false"`，**没有系统自动备份**。
-- 目前**没有任何导出/导入入口**。
-- `SetupActivity` 是 launcher，且**数据有效时 `onCreate` 直接 `launchGame()` 自动进游戏**，
-  正常情况下用户看不到设置页 —— 这决定了入口 UX（见 §4）。
+- 当前首页已提供 **Export saves / Import saves**；两者都通过 SAF 目录选择器复制文件，
+  不需要 root，也不要求应用可调试。
+- `SetupActivity` 是 launcher。数据有效时显示首页菜单，由用户点 **Play** 进游戏；
+  导入发生在引擎启动前，避免游戏内已缓存旧存档信息。
 - `androidx.documentfile:1.1.0` 已是依赖，SAF 读写可直接用 `DocumentFile`。
 
 ## 2. 目标
@@ -37,9 +39,10 @@
 ### 3.1 导出
 
 - 触发 `Intent.ACTION_OPEN_DOCUMENT_TREE`（选一个**目标文件夹**，一次授权即可写多个文件）。
-- 用 `DocumentFile.fromTreeUri(ctx, treeUri)` 遍历私有存档目录里的
-  `RAYMAN*.SAV` / `RAYMAN*.CFG`，逐个写入目标文件夹：
-  - `dest.findFile(name)` 命中 → `openOutputStream()`（"w" 截断覆盖）；
+- 用 `DocumentFile.fromTreeUri(ctx, treeUri)` 遍历私有存档目录里经
+  `GameDataBridge.isSaveFileName()` 接受的文件（`RAYMAN*.SAV` / `RAYMAN*.CFG` /
+  `rayverse_ss_*.bin`），逐个写入目标文件夹：
+  - `dest.findFile(name)` 命中 → `openOutputStream(uri, "wt")`（截断覆盖）；
   - 未命中 → `dest.createFile("application/octet-stream", name)` 再写。
 - 状态栏反馈导出文件数与失败项。
 - **可选增强**：打成单个 `.zip` 再用 `ACTION_CREATE_DOCUMENT` 导出（便于聊天/邮件分享），
@@ -48,14 +51,18 @@
 ### 3.2 导入
 
 - 触发 `Intent.ACTION_OPEN_DOCUMENT_TREE`（选一个**源文件夹**）。
-- 遍历该文件夹，只挑文件名匹配 `RAYMAN*.SAV` / `RAYMAN*.CFG` 的项，
-  复制进 `filesDir/rayverse_save`（`openOutputStream` 截断覆盖）。
+- 遍历该文件夹，只挑 `GameDataBridge.isSaveFileName()` 接受的项
+  （`RAYMAN*.SAV` / `RAYMAN*.CFG` / `rayverse_ss_*.bin`），复制进
+  `filesDir/rayverse_save`（`FileOutputStream` 截断覆盖）。
 - **导入前弹确认框**（会覆盖现有进度，属破坏性操作）。
 - 状态栏反馈导入文件数。
 
 ### 3.3 跨设备共享
 
-- 存档是纯游戏状态文件，**与设备无关**，只要两端引擎版本兼容即可互用。
+- 原版 `RAYMAN*.SAV/.CFG` 与即时存档的兼容性不同：前者按引擎原生存档格式处理；
+  后者还受 `fmt`、`stamp`、region 尺寸和指针覆盖范围约束。**文件能导出/导入不代表
+  任意设备或构建都能读档**；当前跨构建仍有 draw-buffer 限制，见 `savestate-phase2.md`
+  顶部现状框与 `android-debug-log.md` §17。
 - 推荐路径：导出到一个**被同步的目录**（Syncthing / Drive / Dropbox / Nextcloud），
   另一台手机同一目录里即出现存档 → 导入。
 - 或任意文件传输（USB / 聊天 / 邮件）后再导入。
@@ -75,22 +82,18 @@
 - E1 让导出/导入对称、可发现，且是普通 Android Activity，实现最简单、最稳。
 - 代价：启动多一次点击（首页点 Play）。
 
-结论：**E1**。首页菜单 = `Play / Export saves / Import saves / Change folder`。
+结论：**E1**。当前首页菜单 = `Play / Export saves / Import saves / Change data folder`。
 （游戏内设置按钮保持只负责屏幕方向/手柄编辑，不放文件选择器。）
 
 ## 5. 代码触点
 
-- `GameDataBridge.java`（新增，纯 Java）：
-  - `File getSaveDir()`（复用现有 `filesDir/rayverse_save` 逻辑，去重两处硬编码）
-  - `List<String> listSaveFiles()`
-  - `int exportSavesTo(Uri treeUri)` / `int importSavesFrom(Uri treeUri)`（返回成功文件数）
-- `SetupActivity.java`（或新的 `SaveManagerActivity`，取决于 §4）：
-  - 菜单/按钮、两个 `ACTION_OPEN_DOCUMENT_TREE` 请求码、`onActivityResult` 处理、
-    导入确认框、状态反馈。
-- `res/values/strings.xml`：新增按钮/对话框文案（当前无 strings.xml，需新建）。
-- **native / 引擎：无改动。**
-- 权限：`OPEN_DOCUMENT_TREE` 已含读写授权；是否 `takePersistableUriPermission`
-  记住导出/导入目录为可选。
+- `GameDataBridge.java`（纯 Java）：`getSaveDir()`、`isSaveFileName()`、
+  `listSaveFiles()`、`exportSavesTo(Uri)` / `importSavesFrom(Uri)`。
+- `SetupActivity.java`：首页按钮、两个 `ACTION_OPEN_DOCUMENT_TREE` 请求码、
+  `onActivityResult`、导入确认框与状态反馈；当前按钮/对话框文案直接写在 Java 中。
+- **native / 引擎：无改动。** 2026-10-15 仅在 Java 文件过滤器中追加即时存档匹配。
+- 权限：`ACTION_OPEN_DOCUMENT_TREE` 返回的 URI 已含本次读写授权；当前未把
+  导出/导入目标目录持久化，游戏数据目录授权是另一套既有流程。
 
 ## 6. 边界与风险
 
@@ -105,18 +108,21 @@
 ## 7. 测试计划（真机，用户执行游戏内验证）
 
 1. 装 debug 包，玩到某存档点，确认 `filesDir/rayverse_save` 有 `.SAV`（debug 可 `run-as` 查）。
-2. 导出到某目录 → 在文件管理器里确认 `RAYMAN*.SAV`/`.CFG` 全部落地。
-3. 清空/重装 App（或换第二台机）→ 导入刚才的目录 → 进游戏确认进度正确加载。
-4. 跨设备：导出到 Syncthing/云盘目录 → 另一台导入 → 验证。
-5. release 包重复 2–3（验证免 root、release 可用）。
+2. 先在关卡内写即时存档，再导出到某目录 → 确认 `RAYMAN*.SAV` / `.CFG` 与
+   `rayverse_ss_*.bin` 全部落地。
+3. 清空/重装 App（或换第二台机）→ 导入刚才的目录 → 进游戏确认原生存档进度；
+   进入关卡游玩后再尝试读即时存档，并按当前兼容性限制判断结果。
+4. 跨设备：导出到 Syncthing/云盘目录 → 另一台导入 → 分别验证原生存档与即时存档；
+   不把“文件复制成功”当作“即时存档可恢复”的判据。
+5. release 包重复 2–4（验证免 root、release 可用）。
 
-## 8. 里程碑
+## 8. 实施记录
 
-1. `GameDataBridge` 存档枚举 + 导出/导入辅助（纯 Java）。
-2. 定 §4 入口 UX，接线按钮与 `onActivityResult`。
-3. 导入确认框 + 状态反馈 + strings。
-4. 真机联调（§7）。
-5. 文档：更新 `docs/controls-android.md` 或新增用户指南小节；release notes 提及。
+1. ✅ `GameDataBridge` 存档枚举 + 导出/导入辅助（纯 Java）。
+2. ✅ 按 §4 的 E1 入口接线按钮与 `onActivityResult`。
+3. ✅ 导入确认框与状态反馈（文案当前直接位于 `SetupActivity.java`）。
+4. ✅ 真机导出已用于回收 `savestates/` 中的三份即时存档样本；其余组合按 §7 回归。
+5. ✅ 2026-10-15 文件过滤器加入 `rayverse_ss_*.bin`，完成 Phase 2c。
 
 ## 关联改动（已完成）
 

@@ -3,6 +3,14 @@
 Phase 1（会话内单槽，真机已验收）见 `docs/savestate-plan.md`。本文只解决 Phase 2 的三个新问题：
 快照写文件、多槽位、**应用重启后还能恢复**。第三条是全部难点所在，前两条的设计也围绕它。
 
+> **当前实现基线（2026-10-15，commit `287db5b`）**：文件格式为 **fmt=2、14 个区域**
+> （8 个 COPY + 6 个 ADDRESS_ONLY）；armed resume 已移除，只能在关卡游玩中手动存/读；
+> 首页 Export/Import saves 已包含 `rayverse_ss_*.bin`。同构建跨进程读档已验证，但
+> **跨构建/跨版本只支持一部分**：代码与字符串指针会 keep-live，三个 draw-buffer 全局会
+> 重派生，`Bande[].draw_buffer_pos` 仍未覆盖；`SS_RGN_DRAWBUF` 尚未实现，因此不要承诺
+> 任意旧槽可跨构建或跨设备恢复。下文保留各阶段的设计与排查原文；如与早期段落冲突，
+> 以本框、§11 及 `docs/android-debug-log.md` §16–17 为准。
+
 ## 1. 硬问题：ASLR
 
 快照的本质是"一堆绝对地址的原始字节"。同一进程内地址稳定，所以 Phase 1 成立；新进程里
@@ -85,7 +93,7 @@ arm64 用户态 mmap 地址在 `0x5e00…`～`0x7f…` 量级，游戏状态里�
 > 命名堆块 / `heap_other` / `mapped_other` / `unmapped`，并用 `noise_low` 标出其中 <2^40 的打包整数。
 > 实测数据与判读见 §9。
 
-## 2. 文件格式（v1，已实现）
+## 2. 文件格式（本节为 v1 历史记录；当前为 fmt=2，见 §10.2）
 
 ```
 rv_file_hdr_t（小端，64 字节，紧接 payload）
@@ -114,7 +122,8 @@ payload: 按 region 顺序拼接的 COPY 内容（raw，不压缩）
 
 - 体积 ≈ **5.9 MB/槽**（payload 5861 K），落在
   `filesDir/rayverse_save/rayverse_ss_<slot>.bin`（文件名 `SS_SLOT_FILE`，最多 3 个），与现有
-  `RAYMAN*.SAV/.CFG` 同目录，于是**存档导出/导入天然带上即时存档**（2c 几乎零成本）。
+  `RAYMAN*.SAV/.CFG` 同目录。2c 已在 `GameDataBridge.isSaveFileName()` 显式加入
+  `rayverse_ss_*.bin`，首页导出/导入现已覆盖即时存档。
   写入走 `<slot>.bin.tmp` + `rename()`，掉电/被杀不会留下半截文件。
 - 拒绝条件与状态码（`savestate.h` 里是权威定义）：
   1 已存槽 / 2 存档被拒（不在游玩）/ 3 内存不足 / 4 已读槽 / 5 无快照 /
@@ -141,7 +150,7 @@ payload: 按 region 顺序拼接的 COPY 内容（raw，不压缩）
   `nativeGetSaveStateStatus()` / `nativeGetSaveStateSlotInfo(int)`（返回 `"world,level,epoch,usable"`
   或 `"empty"` / `"broken"`）。
 
-## 4. 跨进程恢复的启动编排（2b 的 UX 难点）
+## 4. 跨进程恢复的启动编排（历史方案；armed resume 已于 §11.1 移除）
 
 引擎必须"已经站在目标关卡的游玩帧"才能应用快照（`ss_in_gameplay()` 门禁 + 调用栈形态一致）。
 不打算改引擎，改用引擎本来就会写的全局做引导 —— **armed resume**：
@@ -166,9 +175,12 @@ payload: 按 region 顺序拼接的 COPY 内容（raw，不压缩）
 
 - **2a（可独立交付）✅ 已完成（2026-10-06 模拟器验收，实测记录见 §9）**：区域表重构 + 落盘/读盘 + 版本/`stamp`/payload 哈希校验 + 多槽 UI + 指针分类探针。
   同会话内"存到槽位 → 读回"即可全流程验证（地址未变，重定位走 delta=0 分支），风险低。
-- **2b ✅ 已实现（2026-10-14，代码 + 构建通过；实现记录见 §10，待用户真机/模拟器手动验收）**：
-  按值分类重定位（字节粒度）+ `ADDRESS_ONLY` 区域接表 + armed resume 启动编排（启动弹窗确认）。
-- **2c**：即时存档文件走现有 SAF 导出/导入通道，同 `stamp` 的设备间可共享。
+- **2b ✅ 已实现并经过多轮真机修复验证（2026-10-14 起；见 §10–§11 与调试记录 §15–17）**：
+  按值分类重定位（字节粒度）+ `ADDRESS_ONLY` 区域接表。armed resume 曾实现，后于 §11.1 移除。
+  同构建跨进程路径已验证；跨构建仍有 draw-buffer 限制，见顶部现状框。
+- **2c ✅ 已实现（2026-10-15）**：`GameDataBridge.isSaveFileName()` 把 `rayverse_ss_*.bin`
+  纳入现有 SAF Export/Import saves。文件可迁移不等于任意构建均可恢复，仍受 fmt/stamp 与
+  未登记指针限制。
 
 ## 6. 验证清单
 
@@ -176,8 +188,10 @@ payload: 按 region 顺序拼接的 COPY 内容（raw，不压缩）
    `world/level` 与画面一致。
 2. ✅（模拟器，见 §9）2a：APK 重装（同版本同签名，进程重启）后读旧文件 → 因 ASLR **不应**被允许
    直接应用；验证 `stamp` 命中但重定位失败路径不崩（2b 前该用例提示"该存档来自另一次运行"）。
-3. 2b：存 → 完全杀掉进程 → 重开 → 弹窗确认 → 自动引导 → 恢复到原位（生命/Tings/敌人/计时全回滚）。
-4. 2b：存 A 世界 → 杀掉 → 重开 → 引导恢复；音效正常（bank 重载路径 + 恢复后 `stop_all_snd()`）。
+3. 2b（当前路径）：存 → 完全杀掉进程 → 重开 → 手动进入任意关卡的游玩状态 →
+   「即时读档」恢复到目标槽（生命/Tings/敌人/计时全回滚）；不再出现启动恢复弹窗。
+4. 2b（当前路径）：存 A 世界 → 杀掉 → 重开 → 手动进关后读档；音效正常
+   （bank 重载路径 + 恢复后 `stop_all_snd()`）。
 5. 2b：`stamp` 不符（换新 APK）→ 状态码 9 拒绝（"版本不符"），无崩溃。
 6. ✅（模拟器，见 §9）探针：三类命中数稳定，未知 rw 命中数为 0。
 7. ✅（模拟器，见 §9）连续 10 次存读内存不增长；单次 dump/load 的帧耗时（写 5.9 MB）可接受。
@@ -277,7 +291,7 @@ pool=[2286,314,53,627,0] heap_other=1385 mapped_other=479 unmapped=8427 noise_lo
 4. 探针在**其他世界/关卡、特效进行中、CD 音乐播放中**复跑一遍 —— 仍待做；本轮数据只覆盖
    世界 1 关卡 1 的一个静态时刻，函数指针表可能在别的关卡被填进新的全局。
 
-## 10. 2b 实现记录（2026-10-14；代码 + 构建完成，待手动验收）
+## 10. 2b 初始实现记录（2026-10-14；后续验收与修复见 §11 及调试记录）
 
 改动足迹：`src/savestate.c`（重定位 + 区域表扩展 + armed 编排）、`src/savestate.h`、
 `src/proto.h`（2 个 hook 声明）、`src/display.c`（2 行 `#ifdef ANDROID` hook）、
@@ -336,7 +350,7 @@ pool=[2286,314,53,627,0] heap_other=1385 mapped_other=479 unmapped=8427 noise_lo
   钉住前的光标值，极端情形（光标停在蛋糕奖章且已通关）可能走结局流程；引导不看
   `t_world_info` 解锁状态，直接加载目标关。
 
-### 10.5 手动验收清单
+### 10.5 初始手动验收清单（含已移除的 armed resume；当前流程见 §6）
 
 1. **同会话回归**（2a 用例）：关卡中存槽 1 → 走动/死亡 → 读槽 1 精确回滚；日志应有
    `relocate: layout identical to capture, nothing to fix`。
@@ -502,9 +516,11 @@ non-executable memory`，pc == lr == 0x6d8717f8a8，而该地址落在**活数�
   配置/屏幕模式——这些本来就不是游戏进度，语义上就该用活值；
 - 字符串表 → 本 build 的正确字符串。
 
-**为什么完备**：数据布局由 stamp 冻结兜住（§11.3）；池/堆内容零模块指针（盘点 5）；
-数据段里的模块指针全部被 keep-live 覆盖。于是**跨版本、跨进程、跨设备**读档都不再
-依赖"两个 build 代码一致"，且不需要改文件格式——旧槽直接可读。
+**本节修复的完备性边界**：数据布局由 stamp 冻结兜住（§11.3）；池/堆内容零模块指针（盘点 5）；
+数据段里的模块指针全部被 keep-live 覆盖。因此，**代码/字符串指针这一类**跨 build 恢复不再
+依赖"两个 build 代码一致"，且不需要改文件格式。后续 2026-10-15 的槽文件解剖又发现
+`Bande[].draw_buffer_pos` 等裸 draw-buffer 指针不属于本节覆盖范围，故不能据此推导出
+"任意旧槽均可跨版本/跨设备恢复"；当前限制见顶部现状框与 `android-debug-log.md` §17。
 
 **验收**：真机装新包后读旧版本槽（world 1 level 9），成功恢复、无闪退（2026-10-14
 用户确认）。日志出现 `load: kept N code/rodata references live`（N≈1654）。

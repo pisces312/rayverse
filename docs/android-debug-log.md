@@ -120,7 +120,7 @@ adb logcat -v time Rayverse:V Rayverse-DBG:V Rayverse-GL:V Rayverse-IO:V \
 
 实现位置：
 
-- 原生 `src/ray_log.h`：`RAY_LOG(tag, level, …)` → `__android_log_is_loggable(level, tag, RAY_LOG_DEFAULT)`。该函数 API 30 才有，而 minSdk 是 21，所以用 `dlsym(RTLD_DEFAULT, …)` 取；取不到（API 21-29）时退化成只比较编译期默认值。
+- 原生 `src/ray_log.h`：`RAY_LOG(tag, level, …)` 先无条件写入应用内日志环，再由 `ray_log_enabled()` 决定是否写 logcat。`__android_log_is_loggable()` 是 API 30 符号，而 minSdk 为 21；当前通过 `__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__` 的 weak undefined 引用 + `__builtin_available(android 30, *)` 守卫调用，API 21–29 退化为 `level >= RAY_LOG_DEFAULT`。**不再使用 `dlsym` 或缓存函数指针**；宏由 `Android.mk` 全局注入，`ray_log.h` 也在包含 `<android/log.h>` 前提供兜底定义。
 - Java `RayLog.java`：release 下用 `Log.isLoggable(tag, Log.DEBUG)` 判断是否打开。**不能问 INFO 档** —— 属性未设置时 `isLoggable` 的内置默认就是 INFO，会一直返回 true，release 就静默不下来。副作用：Java 侧只认 DEBUG/VERBOSE 两个开关值，设成 INFO 不放开 `RayLog.i/v`（`RayLog.e` 始终输出）。
 - 默认阈值由 `app/build.gradle.kts` 的各 buildType 注入：debug `-DRAY_LOG_DEFAULT=ANDROID_LOG_VERBOSE`，release `-DRAY_LOG_DEFAULT=ANDROID_LOG_ERROR`。
 
@@ -206,7 +206,7 @@ slot 0: region seg moved since capture (saved=… live=… delta=10043392)
   还原、旧档偏移对比、危险面盘点）见 `docs/savestate-phase2.md` §11.5。
 - **验收**：真机读旧版本槽（world 1 level 9）成功恢复、无闪退（2026-10-14）。
 
-## 15. 同版本跨进程读档：真机挂起/abort（调研中，savestate）
+## 15. 同版本跨进程读档：真机挂起/abort（平台静态量根因已修复，savestate）
 
 - **症状**（1.0.3 真机，同版本存档→退出→重进→读档）：
   - Honor（BKQ-AN80）：读档后画面卡死不崩，无 tombstone。日志停在

@@ -41,12 +41,12 @@ A 3–5 s `BUILD SUCCESSFUL` is usually a real incremental build — trust the m
 Check first: `MSYS_NO_PATHCONV=1 adb shell ls /sdcard/RAYMAN | head` (must contain `PCMAP`). If missing:
 
 ```bash
-cd "/d/games/Rayman1_DosBox4.0" && tar -cf /tmp/rayman.tar RAYMAN
+cd "/e/games/Rayman1_DosBox4.0" && tar -cf /tmp/rayman.tar RAYMAN
 MSYS_NO_PATHCONV=1 adb push "$(cygpath -w /tmp/rayman.tar)" /sdcard/rayman.tar
 MSYS_NO_PATHCONV=1 adb shell "cd /sdcard && tar -xf /sdcard/rayman.tar"
 ```
 
-Never `adb push` a directory (bad_alloc crash). First run (or after `pm clear`, which you should avoid) needs the SAF folder grant: tap **Change folder** → in DocumentsUI tap **"USE THIS FOLDER"** ≈ (1200,891) → in the confirmation dialog tap **"ALLOW"** ≈ (1793,640) (that dialog's buttons are reachable via `uiautomator dump` — read `android:id/button1`'s `bounds` and tap its center, since this is a framework dialog, not the game's). `GameDataBridge` logs `Game data OK (100 files)` when the fd table is populated.
+Never `adb push` a directory (bad_alloc crash). First run (or after `pm clear`, which you should avoid) needs the SAF folder grant: tap **Change data folder** → in DocumentsUI tap **"USE THIS FOLDER"** ≈ (1200,891) → in the confirmation dialog tap **"ALLOW"** ≈ (1793,640) (that dialog's buttons are reachable via `uiautomator dump` — read `android:id/button1`'s `bounds` and tap its center, since this is a framework dialog, not the game's). `GameDataBridge` logs `Game data OK (100 files)` when the fd table is populated.
 
 ### 3. Enable verbose logs (restart required)
 
@@ -113,8 +113,10 @@ MSYS_NO_PATHCONV=1 adb shell "run-as com.rayverse.rayman.debug ls -l /data/data/
 Pass criteria:
 
 - `captured: world=W level=L segment=395K stamp=<hex>` — **segment must be ≈395K**; a 18K value means the RELRO-segment regression (`docs/android-debug-log.md` §7) is back.
-- `slot N written: world=W level=L payload=5861K in <ms>` — the file must actually appear, 6,002,720 B
-  (payload 5861K + 416 B header/region table). Writes measured 26–85 ms, reads 57–155 ms; if `written:`
+- `slot N written: world=W level=L payload=<size> in <ms>` — the file must actually appear.
+  Current fmt=2 has 14 regions, so the fixed header/table is 88 + 14×40 = **648 B**; total file
+  size remains layout/pool dependent (the 2026-10-15 samples are 6,001,656 B), not a universal constant.
+  Writes measured 26–85 ms, reads 57–155 ms in the 2a baseline; if `written:`
   is missing while the toast said saved, that is the status-publish race of `docs/android-debug-log.md` §11.
 - `slot N read: …` + `loaded: world=W level=L`; position/Lums/tings match the pre-save screenshot;
   other slots keep their own content (cross-slot isolation).
@@ -124,7 +126,7 @@ Pass criteria:
   maps path parse regressed and the module range was never registered (check `regions=14` in the
   `probe(capture)` line). Baseline and interpretation: `docs/savestate-phase2.md` §9.
 
-Status codes (Java toasts / `nativeGetSaveStateStatus`): 1 saved-to-slot, 2 save rejected (not in gameplay), 3 alloc failed, 4 loaded-from-slot, 5 no snapshot, 6 load rejected, 7 world/level mismatch, 8 slot write failed, 9 file unusable (magic/format/stamp/checksum), 10 layout moved — i.e. the slot was written by **another process**, which phase 2a refuses by design (`docs/android-debug-log.md` §12). The gate is `RaymanDansUneMapDuJeu && !During_The_Menu && !GoMenu && !gele` — codes 2/6 in menus are expected behavior, not failures. Java polls status every 250 ms up to 40 times, so logs land within ~3 s. Every code (including rejections) has a breadcrumb; the chain `request: save → frame hook: op=1 → captured → written/rejected` pinpoints where a failure stopped.
+Status codes (Java toasts / `nativeGetSaveStateStatus`): 1 saved-to-slot, 2 save rejected (not in gameplay), 3 alloc failed, 4 loaded-from-slot, 5 no snapshot, 6 load rejected, 7 world/level mismatch, 8 slot write failed, 9 file unusable (magic/format/stamp/checksum), 10 cannot map a saved region to the current process. **Cross-process slots are no longer refused merely because their bases differ**: phase 2b relocates them; status 10 now means a required live region is missing/incompatible (`docs/savestate-phase2.md` §10.3). The gate is `RaymanDansUneMapDuJeu && !During_The_Menu && !GoMenu && !gele` — codes 2/6 in menus are expected behavior, not failures. Java polls status every 250 ms up to 40 times, so logs land within ~3 s. Every code (including rejections) has a breadcrumb; the chain `request: save → frame hook: op=1 → captured → written/rejected` pinpoints where a failure stopped.
 
 Without adb (real device): gear → **查看调试日志** opens the full ring-buffer dump (Java + native, release included) and copies it to the clipboard; the dialog auto-scrolls to the tail. Its header line (version, debug flag, model) also proves which build is installed.
 

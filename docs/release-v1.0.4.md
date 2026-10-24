@@ -105,6 +105,13 @@ A virtual gamepad is drawn on screen; tap the gear in the top-right corner to en
 
 ## 已知限制 / Known limitations
 
+> **发布后补充（2026-10-15）**：随后确认一类跨构建旧槽仍可能因 `Bande[].draw_buffer_pos`
+> 的裸 draw-buffer 地址而崩溃。当前源码已重派生三个独立 draw-buffer 全局，但尚未实现
+> `SS_RGN_DRAWBUF`；同构建跨进程验收通过不能外推为任意旧槽均可恢复。详见
+> `android-debug-log.md` §16–17。/ Post-release follow-up: cross-build slots are still only
+> partially supported because `Bande[].draw_buffer_pos` is not relocated. Same-build
+> cross-process verification does not guarantee that every older slot can be restored.
+
 - 仅编译 arm64；x86_64 模拟器和 32 位设备不可用 / arm64 only.
 - 即时存档只能在关卡游玩中使用，不能从标题/世界地图/首页恢复 / Instant savestates only work while playing a level; there is no boot-time auto-resume.
 - 即时存档固定 3 个槽位，不做自动轮转 / Exactly 3 instant-savestate slots, no auto-rotation.

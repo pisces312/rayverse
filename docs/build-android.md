@@ -57,9 +57,9 @@ gradle assembleRelease
 
 坑：`signingConfigs` 块必须写在 `buildTypes` **之前**。Gradle KTS 的 DSL 按书写顺序执行，写在后面时 `signingConfigs.getByName("release")` 取到的是空配置，`packageRelease` 会静默产出 `app-release-unsigned.apk`。环境变量缺失时 `assembleRelease` 在配置阶段就报错并列出缺哪个变量（脚本里不写任何默认值），`assembleDebug` 不受影响。
 
-签名密钥与 debug 密钥不同，真机上装 release 包需要先卸载 debug 包，SAF 目录授权会随之丢失，需重新选择游戏目录。
+debug 与 release 可以并排安装：debug 的 `applicationIdSuffix = ".debug"` 使包名变为 `com.rayverse.rayman.debug`，release 为 `com.rayverse.rayman`。两者的私有存档目录和 SAF 授权相互独立；只有用不同签名覆盖安装**同一 applicationId** 时，才需要先卸载原包，卸载会同时清除其存档与 SAF 授权。
 
-release 包的日志默认只保留 ERROR 级以上（debug 包全开），阈值由各 buildType 注入的 `-DRAY_LOG_DEFAULT` 决定。给远程反馈取证时先 `adb shell setprop log.tag.Rayverse-DBG VERBOSE` 再重启应用，细节见 `android-debug-log.md` 第 8 节。
+release 包的日志默认只保留 ERROR 级以上（debug 包全开），阈值由各 buildType 注入的 `-DRAY_LOG_DEFAULT` 决定。给远程反馈取证时先 `adb shell setprop log.tag.Rayverse-DBG VERBOSE` 再重启应用，细节见 `android-debug-log.md` §9。没有 adb 时可用游戏内设置菜单的「查看调试日志」，release 也会全量写入应用内日志环。
 
 ## 项目结构（Android 部分）
 

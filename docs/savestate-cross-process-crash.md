@@ -2,6 +2,12 @@
 
 > 对应 `android-debug-log.md` §15。本文是完整调研记录：症状矩阵 → 证据链 →
 > 根因 → 修复设计 → **新问题风险评估** → 验证计划。
+>
+> **后续现状（2026-10-15）**：`android_plat_state_save/restore()` 已落地，旧 `dlsym`
+> 缓存也已由 weak `__android_log_is_loggable` 取代。§8 的“画面冻结未定位”和 §9 的
+> 提交状态均是当时记录；后续已定位到 draw-buffer 指针家族，三个独立全局已重派生，
+> `Bande[].draw_buffer_pos` 与 `SS_RGN_DRAWBUF` 仍未解决。当前结论以
+> `android-debug-log.md` §16–17 和 `savestate-phase2.md` 顶部现状框为准。
 
 ## TL;DR
 

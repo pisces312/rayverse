@@ -1,5 +1,8 @@
 # release 包验证：weak `__android_log_is_loggable` 方案（2026-10-15 10:47）
 
+> 后续状态：该分支已合入 `main`（merge `c86fb92`），当前 `src/ray_log.h` 使用本文验证的
+> weak + `__builtin_available` 方案。文末“未完成”是验证当时的记录。
+
 ## 结论
 
 `raylog-weak-is-loggable` 分支在 **release 包**上通过跨进程读档全链路验证：

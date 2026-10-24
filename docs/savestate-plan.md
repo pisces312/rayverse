@@ -119,20 +119,20 @@ savestate 快照 = {
 
 - **Phase 1（已完成，2026-10-06 真机验收）**：会话内单槽内存快照，关卡游玩中存/读，跨关卡恢复，
   音频指针一致性处理。真机验证。
-- **Phase 2（设计见 `docs/savestate-phase2.md`）**：持久化到文件（`g_save_dir`，含版本号/校验和），多槽位，
-  应用重启后引导引擎进对应关卡再恢复（需处理"启动路径走到 gameplay"的编排）。
-  其中 **2a 已完成（2026-10-06 模拟器验收）**：3 槽落盘 + `stamp`/payload 校验 + 槽位 UI + 指针分类探针。
-  **2b 已实现（2026-10-14，代码 + 构建通过，待手动验收）**：按值分类重定位（字节粒度，修正两遍法设计，
-  见 phase2 文档 §10）+ `ADDRESS_ONLY` 区域接表 + armed resume 启动引导（启动弹窗确认后自动进目标关恢复）；
-  跨进程读档由状态码 10 拒绝改为重定位支持。剩 **2c**（存档导出/导入带上即时存档）待做。
-- **Phase 3（可选）**：任意上下文读档（菜单/世界地图中），用 longjmp 回卷到
-  PcMain 安全点再恢复；导出/导入 savestate 文件（复用现有 save export 通道）。
+- **Phase 2（当前实现见 `docs/savestate-phase2.md`）**：2a 的 3 槽落盘、`stamp`/payload 校验、槽位 UI 与指针探针已完成；
+  2b 已实现按值分类重定位（字节粒度）和 6 个 `ADDRESS_ONLY` 区域，跨进程读档不再由状态码 10 一概拒绝。
+  早期的 armed resume 启动引导已于 2026-10-14 移除，**现在只能在关卡游玩中手动读档**。
+  2c 也已完成：`GameDataBridge.isSaveFileName()` 已把 `rayverse_ss_*.bin` 纳入首页 Export/Import saves。
+  **当前限制**：同构建跨进程读档已有真机验证；跨构建只能算部分支持，`Bande[].draw_buffer_pos` 指向的裸 draw buffer
+  尚未登记为重定位区域，跨构建分配布局不同的槽仍可能崩溃。详见 phase2 文档顶部现状与 `android-debug-log.md` §17。
+- **Phase 3（可选）**：任意上下文读档（菜单/世界地图中），用 longjmp 回卷到 PcMain 安全点再恢复。
+  savestate 文件导出/导入已在 Phase 2c 完成，不再属于待办。
 
 ## 风险与对策
 
 | 风险 | 说明 | 对策 |
 |------|------|------|
-| 平台 stale 值回填不全 | 段内含 JNI/SDL 相关静态量 | 排除 `global_app_state` + savestate 上下文；fd 表游戏中不变（重启进程才会重注册），v1 接受，Phase 2 重启恢复时天然重置 |
+| 平台 stale 值回填不全 | 段内含 JNI/日志相关静态量；跨进程恢复时 fd 号、日志环指针和路径都属于写档进程 | 除 `global_app_state` 与 savestate 上下文外，`android_plat_state_save/restore()` 还在段恢复前后保活 `g_fd_table`、`g_fd_count`、`g_log_ring`、SAF/游戏数据/存档路径及 `g_use_saf`。新增 `android_jni.c` 文件级静态量必须同步纳入该结构 |
 | 音频堆指针悬垂 | 存档后换世界/换曲导致 free | 步骤 3 的对比-回填-重载逻辑 |
 | `main_mem_tmp` 悬垂指针 | 引擎 `bonus.c`/`display.c` 里 `free(main_mem_tmp)` 后**不清 NULL**，正常游玩帧该全局是悬垂指针；已释放块的内容（清零/分配器 poison/复用数据）随设备与分配器版本而异，Magic8 Pro 上读出 capacity≈128TB 导致快照 malloc ENOMEM（存档 status 3），往悬垂结构回写更是堆破坏 | `savestate.c` 的 `ss_pool_ptr()` 净化：`capacity==0 || capacity>64MB || len>capacity` 一律视为不存在，alloc/save/load/回写四条路径统一使用；回写只认存档时记录的净化后指针。见 `android-debug-log.md` 第 10 条 |
 | 栈上局部变量不参与恢复 | `PcMain` 的 `v1` 等少量栈局部 | 均为过渡性标志，下一关卡循环会重初始化；真机观察死亡→读档→过关流程 |
@@ -154,4 +154,4 @@ savestate 快照 = {
 - 2026-10-06 pixel6 模拟器（x86_64 + ndk_translation，debug 包）：清单第 1、2 条通过。
   存档日志 `saved: world=1 level=1 segment=395K`；存档→死亡→重生→读档（`loaded: world=1 level=1`）位置与 Lum 状态精确还原，读档后移动/物理/关卡循环正常，无 SIGSEGV。
   首轮实现误抓 18K RELRO 段（见 `android-debug-log.md` 第 7 条），已修复。
-- 清单 3-7 待真机验证。
+- 上述是 Phase 1 当时的验收记录；清单 3–7 的后续结果不再以此处的“待验证”为准。Phase 2 的真机修复与验收记录见 `docs/savestate-phase2.md` §11 和 `docs/android-debug-log.md` §13–17；当前跨构建限制见上文分阶段说明。
